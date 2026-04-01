@@ -4,6 +4,8 @@ import { streamResponse } from './api.js';
 import { executeTool } from '../tools/index.js';
 import { spinner } from '../ui/spinner.js';
 import { kaomoji } from '../ui/kaomoji.js';
+import { buildMemoryContext } from '../memory/context.js';
+import { appendSession } from '../memory/store.js';
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ');
 const SLOW_TOOL_MS = 300; // show spinner only if tool takes longer than this
 const TOOL_MESSAGES = {
@@ -19,12 +21,21 @@ function toolColor(name) {
     return WRITE_TOOLS.has(name) ? chalk.rgb(107, 140, 78) : chalk.gray;
 }
 function printToolCall(name, input) {
+    if (name === 'memory_write') {
+        process.stdout.write(chalk.rgb(240, 183, 49)(`\n  ◆ memory  ${input.name ?? ''}\n`));
+        return;
+    }
     const color = toolColor(name);
     const detail = input.command ?? input.path ?? input.pattern ?? '';
     const summary = typeof detail === 'string' ? detail.slice(0, 60) : '';
     process.stdout.write(color(`\n  ◆ ${name}${summary ? '  ' + summary : ''}\n`));
 }
 function printToolResult(name, result, elapsed) {
+    if (name === 'memory_write') {
+        const isError = result.startsWith('Error:');
+        process.stdout.write(isError ? chalk.red(`    ✗ ${result}\n`) : chalk.rgb(240, 183, 49)(`    → remembered\n`));
+        return;
+    }
     const isError = result.startsWith('Error:');
     const isWrite = WRITE_TOOLS.has(name);
     if (isError) {
@@ -44,6 +55,18 @@ function printToolResult(name, result, elapsed) {
 }
 export async function startRepl(client, config) {
     const messages = [];
+    let memoryContext = '';
+    // Load memory context once at startup
+    try {
+        spinner.start('loading memory...');
+        memoryContext = await buildMemoryContext(client, config, '');
+        spinner.stop();
+        if (memoryContext)
+            process.stdout.write(chalk.gray('  ◆ memory  context loaded\n'));
+    }
+    catch {
+        spinner.stop();
+    }
     const rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout,
@@ -89,6 +112,7 @@ export async function startRepl(client, config) {
                 }
             }
             messages.push({ role: 'user', content: trimmed });
+            appendSession({ ts: new Date().toISOString(), role: 'user', content: trimmed });
             console.log();
             let responseText = '';
             let thinkingTimer = null;
@@ -121,10 +145,12 @@ export async function startRepl(client, config) {
                     }, (_name, _input) => {
                         clearThinking();
                         thinkingStarted = false;
-                    });
+                    }, memoryContext);
                     clearThinking();
-                    if (responseText)
+                    if (responseText) {
                         process.stdout.write('\n');
+                        appendSession({ ts: new Date().toISOString(), role: 'assistant', content: responseText });
+                    }
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     const assistantBlocks = [];
                     if (responseText)
