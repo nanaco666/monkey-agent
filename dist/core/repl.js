@@ -99,7 +99,7 @@ export async function startRepl(client, config) {
         return false;
     };
     const askQuestion = () => {
-        rl.question('\n' + PROMPT, async (userInput) => {
+        rl.question(PROMPT, async (userInput) => {
             const trimmed = userInput.trim();
             if (!trimmed) {
                 askQuestion();
@@ -194,9 +194,11 @@ export async function startRepl(client, config) {
                 console.log(chalk.red(`\n  ✗ ${msg}`));
                 console.log(chalk.rgb(240, 183, 49)(`  ${kaomoji.crash()}\n`));
             }
+            process.stdout.write('\n');
             askQuestion();
         });
     };
+    process.stdout.write('\n');
     askQuestion();
     let ctrlCCount = 0;
     rl.on('SIGINT', () => {

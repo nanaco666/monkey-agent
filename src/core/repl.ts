@@ -115,7 +115,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
   }
 
   const askQuestion = (): void => {
-    rl.question('\n' + PROMPT, async (userInput) => {
+    rl.question(PROMPT, async (userInput) => {
       const trimmed = userInput.trim()
       if (!trimmed) { askQuestion(); return }
 
@@ -214,10 +214,12 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
         console.log(chalk.rgb(240, 183, 49)(`  ${kaomoji.crash()}\n`))
       }
 
+      process.stdout.write('\n')
       askQuestion()
     })
   }
 
+  process.stdout.write('\n')
   askQuestion()
 
   let ctrlCCount = 0

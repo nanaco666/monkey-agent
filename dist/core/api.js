@@ -1,5 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { homedir } from 'os';
+import { join } from 'path';
 import { toolDefs } from '../tools/index.js';
+import { getProjectSlug } from '../memory/slug.js';
 const SYSTEM_PROMPT_BASE = `You are Monkey, an AI coding assistant running in the terminal.
 You help users with software engineering tasks: reading and writing code, running commands, searching files, debugging, and more.
 
@@ -16,7 +19,8 @@ You help users with software engineering tasks: reading and writing code, runnin
 You have persistent memory across sessions via the memory_write tool.
 - Use memory_write to save: user preferences, project context, feedback, and important facts.
 - Save memories proactively when you learn something worth remembering.
-- Keep memory entries concise and factual.`;
+- Keep memory entries concise and factual.
+- Do NOT use bash to search for memory files. The memory path is given in the dynamic context below.`;
 export async function streamResponse(client, config, messages, onText, onToolUse, memoryContext = '') {
     const toolUses = [];
     // Fixed part: cached. Dynamic part (cwd + memory): not cached.
@@ -29,7 +33,7 @@ export async function streamResponse(client, config, messages, onText, onToolUse
         },
         {
             type: 'text',
-            text: `## Working directory\nCurrent directory: ${process.cwd()}${memoryContext}`,
+            text: `## Working directory\nCurrent directory: ${process.cwd()}\n\n## Memory path\n${join(homedir(), '.monkey-cli', 'memory', getProjectSlug())}${memoryContext}`,
         },
     ];
     const stream = await client.messages.stream({
