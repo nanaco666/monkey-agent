@@ -41,34 +41,22 @@ const PROVIDERS: Provider[] = [
   },
 ]
 
-// Fetch models from a /v1/models endpoint
-// Returns { ids, triedUrls } — ids is empty if all attempts failed
-async function fetchModels(base_url: string, api_key: string): Promise<{ ids: string[]; triedUrls: string[] }> {
-  const base = base_url.replace(/\/$/, '')
-  const triedUrls = base.endsWith('/v1')
-    ? [`${base}/models`]
-    : [`${base}/models`, `${base}/v1/models`]
-
+// Fetch models from {base_url}/models (OpenAI-compatible standard)
+async function fetchModels(base_url: string, api_key: string): Promise<string[]> {
+  const url = `${base_url.replace(/\/$/, '')}/models`
   process.stdout.write(chalk.gray('\n  Fetching available models...'))
-
-  for (const url of triedUrls) {
-    try {
-      const res = await fetch(url, { headers: { Authorization: `Bearer ${api_key}` } })
-      if (!res.ok) continue
-      const json = await res.json() as { data?: { id: string }[]; models?: { id: string }[] }
-      const list = json.data ?? json.models ?? []
-      const ids = list.map((m: { id: string }) => m.id).filter(Boolean).sort()
-      if (ids.length > 0) {
-        process.stdout.write('\r\x1B[2K')
-        return { ids, triedUrls }
-      }
-    } catch {
-      continue
-    }
+  try {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${api_key}` } })
+    if (!res.ok) throw new Error(`${res.status}`)
+    const json = await res.json() as { data?: { id: string }[] }
+    const ids = (json.data ?? []).map((m: { id: string }) => m.id).filter(Boolean).sort()
+    process.stdout.write('\r\x1B[2K')
+    return ids
+  } catch (e) {
+    process.stdout.write('\r\x1B[2K')
+    console.log(chalk.yellow(`  Could not fetch models from ${url} — enter model name manually.\n`))
+    return []
   }
-
-  process.stdout.write('\r\x1B[2K')
-  return { ids: [], triedUrls }
 }
 
 // Arrow-key selector. Returns selected index.
@@ -136,7 +124,8 @@ export async function runSetup(): Promise<void> {
   // base_url for custom
   let base_url = provider.base_url
   if (base_url === null) {
-    base_url = (await ask(rl, chalk.bold.rgb(232, 98, 42)('\n  Base URL: '))).trim()
+    console.log(chalk.gray('\n  e.g. https://your-proxy.com/v1\n'))
+    base_url = (await ask(rl, chalk.bold.rgb(232, 98, 42)('  Base URL: '))).trim()
     if (!base_url) { console.log(chalk.red('\n  Base URL is required.\n')); rl.close(); process.exit(1) }
   }
 
@@ -148,29 +137,11 @@ export async function runSetup(): Promise<void> {
   if (!api_key) { console.log(chalk.red('\n  API key is required.\n')); rl.close(); process.exit(1) }
   rl.close()
 
-  // For providers without hardcoded models, fetch from models endpoint
+  // For providers without hardcoded models, fetch from {base_url}/models
   let modelList = provider.models
   if (modelList.length === 0 && base_url) {
-    const { ids, triedUrls } = await fetchModels(base_url, api_key)
-    if (ids.length > 0) {
-      modelList = ids.map(id => ({ id, label: id }))
-    } else {
-      // Auto-discovery failed — ask user for the correct endpoint
-      console.log(chalk.yellow(`\n  Auto-discovery failed (tried: ${triedUrls.join(', ')})`))
-      const rlm = readline.createInterface({ input: process.stdin, output: process.stdout })
-      const customModelsUrl = (await ask(rlm, chalk.bold.rgb(232, 98, 42)(
-        `  Models endpoint (leave blank to enter manually): `
-      ))).trim()
-      rlm.close()
-      if (customModelsUrl) {
-        const { ids: retryIds } = await fetchModels(customModelsUrl.replace(/\/models$/, ''), api_key)
-        if (retryIds.length > 0) {
-          modelList = retryIds.map(id => ({ id, label: id }))
-        } else {
-          console.log(chalk.yellow('  Still no models found. Enter manually.\n'))
-        }
-      }
-    }
+    const ids = await fetchModels(base_url, api_key)
+    if (ids.length > 0) modelList = ids.map(id => ({ id, label: id }))
   }
 
   let model: string
