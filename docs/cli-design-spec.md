@@ -59,6 +59,36 @@ Used for any single-choice selection (provider, model, etc.).
 - Value typed inline
 - Hint/default shown in brackets: `Label [default]: `
 
+### Implementation: never use readline for text input in setup
+
+`readline.createInterface()` + `rl.close()` destroys the underlying stdin stream.
+Any subsequent raw keypress listener (`process.stdin.on('keypress', ...)`) will stop receiving events.
+
+**Rule:** use raw stdin directly for all input in setup wizard. One consistent approach end-to-end.
+
+```ts
+// ✓ correct — raw stdin, no readline
+function askRaw(question: string): Promise<string> {
+  return new Promise(resolve => {
+    process.stdout.write(question)
+    readline.emitKeypressEvents(process.stdin)
+    if (process.stdin.isTTY) process.stdin.setRawMode(true)
+    let input = ''
+    const onKey = (_, key) => {
+      if (key.name === 'return') { /* resolve */ }
+      else if (key.name === 'backspace') { /* erase */ }
+      else { input += key.sequence; process.stdout.write(key.sequence) }
+    }
+    process.stdin.on('keypress', onKey)
+  })
+}
+
+// ✗ wrong — rl.close() kills stdin for later keypress listeners
+const rl = readline.createInterface({ input: process.stdin, ... })
+rl.question(..., resolve)
+rl.close() // ← breaks everything after this
+```
+
 ## Status messages
 
 ```
@@ -96,6 +126,25 @@ Used for any single-choice selection (provider, model, etc.).
 
   ✓ Config saved to ~/.monkey-cli/config.json
 ```
+
+## External API: model list
+
+- User provides `base_url` as-is (e.g. `https://proxy.com`) — never ask them to append `/v1`
+- We fetch models at `{base_url}/v1/models` with `Authorization: Bearer {api_key}`
+- Response format: `{ data: [{ id: string }] }` (OpenAI-compatible standard)
+- On failure: fall back to manual text input, don't crash
+
+## Selector re-render
+
+Move up N lines then clear to end of screen — not line-by-line:
+
+```
+\x1B[{N}A   ← move cursor up N lines
+\x1B[0J     ← clear from cursor to end of screen
+```
+
+Where N = number of lines printed (blank + label + blank + items).
+Line-by-line clearing causes flicker and residual artifacts.
 
 ## REPL prompt
 
