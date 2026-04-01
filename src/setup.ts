@@ -16,33 +16,21 @@ const PROVIDERS: Provider[] = [
     base_url: undefined,
     key_url: 'https://console.anthropic.com/',
     models: [
-      { id: 'claude-opus-4-5',            label: 'claude-opus-4-5        — most capable' },
-      { id: 'claude-sonnet-4-5',           label: 'claude-sonnet-4-5      — balanced' },
-      { id: 'claude-haiku-4-5-20251001',   label: 'claude-haiku-4-5       — fastest, cheapest' },
+      { id: 'claude-opus-4-5',          label: 'claude-opus-4-5        — most capable' },
+      { id: 'claude-sonnet-4-5',         label: 'claude-sonnet-4-5      — balanced' },
+      { id: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5       — fastest, cheapest' },
     ],
     fast_models: [
-      { id: 'claude-haiku-4-5-20251001',   label: 'claude-haiku-4-5       — recommended for quick tasks' },
-      { id: 'claude-sonnet-4-5',           label: 'claude-sonnet-4-5      — balanced' },
+      { id: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5       — recommended for quick tasks' },
+      { id: 'claude-sonnet-4-5',         label: 'claude-sonnet-4-5      — balanced' },
     ],
   },
   {
     name: 'OpenRouter',
     base_url: 'https://openrouter.ai/api/v1',
     key_url: 'https://openrouter.ai/keys',
-    models: [
-      { id: 'anthropic/claude-opus-4-5',       label: 'anthropic/claude-opus-4-5' },
-      { id: 'anthropic/claude-sonnet-4-5',      label: 'anthropic/claude-sonnet-4-5' },
-      { id: 'anthropic/claude-haiku-4-5',       label: 'anthropic/claude-haiku-4-5' },
-      { id: 'openai/gpt-4o',                    label: 'openai/gpt-4o' },
-      { id: 'openai/gpt-4o-mini',               label: 'openai/gpt-4o-mini' },
-      { id: 'google/gemini-2.0-flash-001',      label: 'google/gemini-2.0-flash-001' },
-      { id: 'deepseek/deepseek-r1',             label: 'deepseek/deepseek-r1' },
-    ],
-    fast_models: [
-      { id: 'anthropic/claude-haiku-4-5',       label: 'anthropic/claude-haiku-4-5' },
-      { id: 'openai/gpt-4o-mini',               label: 'openai/gpt-4o-mini' },
-      { id: 'google/gemini-2.0-flash-001',      label: 'google/gemini-2.0-flash-001' },
-    ],
+    models: [],
+    fast_models: [],
   },
   {
     name: 'Custom endpoint',
@@ -53,18 +41,36 @@ const PROVIDERS: Provider[] = [
   },
 ]
 
+// Fetch models from a /v1/models endpoint
+async function fetchModels(base_url: string, api_key: string): Promise<string[]> {
+  try {
+    process.stdout.write(chalk.gray('  Fetching models...'))
+    const res = await fetch(`${base_url.replace(/\/$/, '')}/models`, {
+      headers: { Authorization: `Bearer ${api_key}` },
+    })
+    if (!res.ok) throw new Error(`${res.status}`)
+    const json = await res.json() as { data?: { id: string }[]; models?: { id: string }[] }
+    const list = json.data ?? json.models ?? []
+    const ids = list.map((m: { id: string }) => m.id).filter(Boolean).sort()
+    process.stdout.write('\r\x1B[2K') // clear the "Fetching..." line
+    return ids
+  } catch {
+    process.stdout.write('\r\x1B[2K')
+    return []
+  }
+}
+
 // Arrow-key selector. Returns selected index.
 function selectList(label: string, items: string[], defaultIdx = 0): Promise<number> {
   return new Promise(resolve => {
     let cursor = defaultIdx
     let rendered = false
 
-    // total lines printed: 1 blank + 1 label + 1 blank + N items = N+3
+    // total lines: 1 blank + 1 label + 1 blank + N items = N+3
     const totalLines = items.length + 3
 
     const render = () => {
       if (rendered) {
-        // move up to start of block, clear to end of screen
         process.stdout.write(`\x1B[${totalLines}A\x1B[0J`)
       }
       rendered = true
@@ -78,7 +84,6 @@ function selectList(label: string, items: string[], defaultIdx = 0): Promise<num
       })
     }
 
-    // hide cursor while selecting
     process.stdout.write('\x1B[?25l')
     render()
 
@@ -90,8 +95,8 @@ function selectList(label: string, items: string[], defaultIdx = 0): Promise<num
         process.stdout.write('\x1B[?25h')
         process.exit(0)
       }
-      if (key.name === 'up')   { cursor = (cursor - 1 + items.length) % items.length; render() }
-      if (key.name === 'down') { cursor = (cursor + 1) % items.length; render() }
+      if (key.name === 'up')    { cursor = (cursor - 1 + items.length) % items.length; render() }
+      if (key.name === 'down')  { cursor = (cursor + 1) % items.length; render() }
       if (key.name === 'return') {
         process.stdin.removeListener('keypress', onKey)
         if (process.stdin.isTTY) process.stdin.setRawMode(false)
@@ -112,10 +117,7 @@ export async function runSetup(): Promise<void> {
   console.log(chalk.rgb(245, 242, 235)('\n  Welcome to Monkey Agent. Let\'s get you set up.\n'))
 
   // Choose provider
-  const providerIdx = await selectList(
-    'Choose a provider:',
-    PROVIDERS.map(p => p.name),
-  )
+  const providerIdx = await selectList('Choose a provider:', PROVIDERS.map(p => p.name))
   const provider = PROVIDERS[providerIdx]
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
@@ -133,29 +135,34 @@ export async function runSetup(): Promise<void> {
   }
   const api_key = (await ask(rl, chalk.bold.rgb(232, 98, 42)('  API key: '))).trim()
   if (!api_key) { console.log(chalk.red('\n  API key is required.\n')); rl.close(); process.exit(1) }
-
   rl.close()
 
-  // Model selection
+  // For providers without hardcoded models, fetch from /v1/models
+  let modelList = provider.models
+  if (modelList.length === 0 && base_url) {
+    const ids = await fetchModels(base_url, api_key)
+    if (ids.length > 0) {
+      modelList = ids.map(id => ({ id, label: id }))
+    }
+  }
+
   let model: string
   let fast_model: string
 
-  if (provider.models.length > 0) {
-    const modelIdx = await selectList(
-      'Main model:',
-      provider.models.map(m => m.label),
-    )
-    model = provider.models[modelIdx].id
+  if (modelList.length > 0) {
+    const modelIdx = await selectList('Main model:', modelList.map(m => m.label))
+    model = modelList[modelIdx].id
 
-    const fastIdx = await selectList(
-      'Fast model (used for quick tasks):',
-      provider.fast_models.map(m => m.label),
-    )
-    fast_model = provider.fast_models[fastIdx].id
+    const fastIdx = await selectList('Fast model (used for quick tasks):', modelList.map(m => m.label))
+    fast_model = modelList[fastIdx].id
   } else {
-    // custom: type manually
+    // fallback: type manually
     const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout })
-    model = (await ask(rl2, chalk.bold.rgb(232, 98, 42)('\n  Model: '))).trim()
+    while (true) {
+      model = (await ask(rl2, chalk.bold.rgb(232, 98, 42)('\n  Model (required): '))).trim()
+      if (model) break
+      console.log(chalk.red('  Model name cannot be empty.'))
+    }
     fast_model = (await ask(rl2, chalk.bold.rgb(232, 98, 42)(`  Fast model [${model}]: `))).trim() || model
     rl2.close()
   }
