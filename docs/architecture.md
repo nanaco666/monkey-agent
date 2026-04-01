@@ -152,11 +152,16 @@ Prompt Cache 策略：
 
 ```
 memory/
-  index.ts         — 加载 MEMORY.md，选择相关 topic files
-  dream.ts         — Dream 后台整理（触发、执行、锁）
-  consolidation-prompt.ts  — Dream 的 4 阶段 prompt
+  slug.ts          — 从 git root 或 cwd 生成项目 slug
+  store.ts         — 读写 topic 文件，自动维护 MEMORY.md 索引，append session JSONL
+  context.ts       — 启动时加载记忆，用 fast_model 选 ≤5 个相关文件注入 system prompt
+  dream.ts         — Dream 后台整理（待实现）
+  consolidation-prompt.ts  — Dream 的 4 阶段 prompt（待实现）
 
-存储位置：~/.claude-client/memory/{project-slug}/
+存储位置：~/.monkey-cli/memory/{project-slug}/
+
+AI 通过 memory_write 工具主动写记忆（src/tools/memory.ts）。
+memory 路径在 system prompt 动态块中明确给出，AI 用 read 工具读取文件。
 ```
 
 ### 6. `commands/` — 斜杠命令
@@ -198,21 +203,17 @@ memory/
 
 ```
 [固定部分 — 加 cache_control，强缓存]
-  你是一个 AI 编程助手...
+  你是 Monkey，AI 编程助手...
   工具使用规则...
-  安全规则...
+  Memory 工具说明...
 
-[半固定部分 — 项目级 CLAUDE.md，加 cache_control]
-  项目背景...
-  约定...
-
-[动态部分 — 每轮可能变化，不缓存]
-  当前日期：...
+[动态部分 — 每次启动可能变化，不缓存]
   当前目录：...
-  相关记忆：...（由 memory/index.ts 动态选择）
+  Memory 路径：~/.monkey-cli/memory/{slug}/
+  相关记忆内容：...（由 memory/context.ts 动态选择）
 ```
 
-固定部分变了就 cache miss，所以绝对不能把当前时间放进去。
+固定部分变了就 cache miss，所以绝对不能把当前时间、路径放进固定部分。
 
 ---
 
