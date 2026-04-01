@@ -127,6 +127,24 @@ rl.close() // ← breaks everything after this
   ✓ Config saved to ~/.monkey-cli/config.json
 ```
 
+## External API: authentication
+
+Anthropic SDK 默认发 `x-api-key` header（Anthropic 自有格式）。
+
+第三方 proxy 和 OpenRouter 遵循 OpenAI 标准，只认 `Authorization: Bearer {key}`。
+
+**规则：有自定义 `base_url` 时，必须额外注入 Bearer 头：**
+
+```ts
+new Anthropic({
+  apiKey: config.api_key,
+  baseURL: config.base_url,
+  defaultHeaders: { 'Authorization': `Bearer ${config.api_key}` },
+})
+```
+
+Anthropic 官方端点不需要这个（SDK 默认行为已够用）。
+
 ## External API: model list
 
 - User provides `base_url` as-is (e.g. `https://proxy.com`) — never ask them to append `/v1`
