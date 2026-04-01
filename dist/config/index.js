@@ -10,6 +10,7 @@ const DEFAULTS = {
 export function loadConfig() {
     // Priority: env vars > config file > defaults
     const envKey = process.env.MONKEY_API_KEY || process.env.ANTHROPIC_API_KEY;
+    const envBaseUrl = process.env.MONKEY_BASE_URL || process.env.ANTHROPIC_BASE_URL;
     let fileConfig = {};
     if (existsSync(CONFIG_FILE)) {
         try {
@@ -26,6 +27,8 @@ export function loadConfig() {
         ...DEFAULTS,
         ...fileConfig,
         api_key,
+        ...(envBaseUrl ? { base_url: envBaseUrl } : {}),
+        ...(envKey ? { api_key: envKey } : {}),
     };
 }
 export function saveConfig(partial) {
