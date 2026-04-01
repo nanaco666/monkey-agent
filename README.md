@@ -47,16 +47,26 @@ npm install -g .
 Set your API key (one-time):
 
 ```bash
-monkey config set api_key sk-ant-...
+monkey config set api_key <your-key>
 ```
 
 Or use an environment variable:
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+export MONKEY_API_KEY=<your-key>
 ```
 
 The key is saved to `~/.monkey-cli/config.json`.
+
+### Custom endpoint
+
+Monkey works with any Anthropic-compatible API. Set a custom `base_url` to use OpenRouter, a local proxy, or other providers:
+
+```bash
+monkey config set base_url https://openrouter.ai/api/v1
+monkey config set api_key <openrouter-key>
+monkey config set model anthropic/claude-opus-4-6
+```
 
 ## Usage
 
@@ -94,11 +104,21 @@ Monkey has access to these tools:
 
 ```json
 {
-  "api_key": "sk-ant-...",
+  "api_key": "your-api-key",
+  "base_url": "https://api.anthropic.com",
   "model": "claude-opus-4-6",
   "fast_model": "claude-sonnet-4-6"
 }
 ```
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `api_key` | — | API key (required) |
+| `base_url` | Anthropic default | Custom endpoint for OpenRouter, proxies, etc. |
+| `model` | `claude-opus-4-6` | Model for main conversations |
+| `fast_model` | `claude-sonnet-4-6` | Model for lightweight tasks |
+
+Environment variables: `MONKEY_API_KEY`, `ANTHROPIC_API_KEY` (fallback).
 
 ## Roadmap
 

@@ -1,5 +1,4 @@
 import Anthropic from '@anthropic-ai/sdk'
-import chalk from 'chalk'
 import type { Config } from '../config/index.js'
 import { toolDefs } from '../tools/index.js'
 
@@ -83,6 +82,9 @@ export async function streamResponse(
   return { toolUses }
 }
 
-export function makeClient(apiKey: string): Anthropic {
-  return new Anthropic({ apiKey })
+export function makeClient(config: Config): Anthropic {
+  return new Anthropic({
+    apiKey: config.api_key,
+    ...(config.base_url ? { baseURL: config.base_url } : {}),
+  })
 }

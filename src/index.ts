@@ -14,7 +14,7 @@ if (args[0] === 'config' && args[1] === 'set' && args[2] === 'api_key' && args[3
 }
 
 const config = loadConfig()
-const client = makeClient(config.api_key)
+const client = makeClient(config)
 
 printBanner(config.model)
 await startRepl(client, config)

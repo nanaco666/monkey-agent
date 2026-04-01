@@ -7,6 +7,7 @@ const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 
 export interface Config {
   api_key: string
+  base_url?: string   // custom endpoint, e.g. OpenRouter, local proxy, AWS Bedrock
   model: string
   fast_model: string
 }
@@ -17,10 +18,9 @@ const DEFAULTS: Omit<Config, 'api_key'> = {
 }
 
 export function loadConfig(): Config {
-  // Priority 1: env var
-  const envKey = process.env.ANTHROPIC_API_KEY
+  // Priority: env vars > config file > defaults
+  const envKey = process.env.MONKEY_API_KEY || process.env.ANTHROPIC_API_KEY
 
-  // Priority 2: config file
   let fileConfig: Partial<Config> = {}
   if (existsSync(CONFIG_FILE)) {
     try {
@@ -33,7 +33,14 @@ export function loadConfig(): Config {
   const api_key = envKey || fileConfig.api_key || ''
 
   if (!api_key) {
-    console.error('\nNo API key found. Set ANTHROPIC_API_KEY or run: monkey config set api_key <key>\n')
+    console.error([
+      '',
+      '  No API key found. Set one via:',
+      '    monkey config set api_key <key>',
+      '  or environment variable:',
+      '    export MONKEY_API_KEY=<key>',
+      '',
+    ].join('\n'))
     process.exit(1)
   }
 
