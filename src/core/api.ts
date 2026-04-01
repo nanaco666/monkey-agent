@@ -1,6 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
+import { homedir } from 'os'
+import { join } from 'path'
 import type { Config } from '../config/index.js'
 import { toolDefs } from '../tools/index.js'
+import { getProjectSlug } from '../memory/slug.js'
 
 export type Message = Anthropic.MessageParam
 
@@ -20,7 +23,8 @@ You help users with software engineering tasks: reading and writing code, runnin
 You have persistent memory across sessions via the memory_write tool.
 - Use memory_write to save: user preferences, project context, feedback, and important facts.
 - Save memories proactively when you learn something worth remembering.
-- Keep memory entries concise and factual.`
+- Keep memory entries concise and factual.
+- Do NOT use bash to search for memory files. The memory path is given in the dynamic context below.`
 
 export async function streamResponse(
   client: Anthropic,
@@ -42,7 +46,7 @@ export async function streamResponse(
     },
     {
       type: 'text',
-      text: `## Working directory\nCurrent directory: ${process.cwd()}${memoryContext}`,
+      text: `## Working directory\nCurrent directory: ${process.cwd()}\n\n## Memory path\n${join(homedir(), '.monkey-cli', 'memory', getProjectSlug())}${memoryContext}`,
     },
   ]
 
