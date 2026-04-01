@@ -4,5 +4,5 @@ export interface Config {
     model: string;
     fast_model: string;
 }
-export declare function loadConfig(): Config;
+export declare function loadConfig(): Config | null;
 export declare function saveConfig(partial: Partial<Config>): void;

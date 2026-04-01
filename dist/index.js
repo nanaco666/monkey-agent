@@ -1,17 +1,24 @@
 #!/usr/bin/env node
-import { loadConfig } from './config/index.js';
+import { loadConfig, saveConfig } from './config/index.js';
 import { printBanner } from './banner.js';
 import { makeClient } from './core/api.js';
 import { startRepl } from './core/repl.js';
-// handle: monkey config set api_key <key>
+import { runSetup } from './setup.js';
+// handle: monkey config set <key> <value>
 const args = process.argv.slice(2);
-if (args[0] === 'config' && args[1] === 'set' && args[2] === 'api_key' && args[3]) {
-    const { saveConfig } = await import('./config/index.js');
-    saveConfig({ api_key: args[3] });
-    console.log('API key saved to ~/.monkey-cli/config.json');
+if (args[0] === 'config' && args[1] === 'set' && args[2] && args[3]) {
+    saveConfig({ [args[2]]: args[3] });
+    console.log(`Saved ${args[2]} to ~/.monkey-cli/config.json`);
     process.exit(0);
 }
-const config = loadConfig();
+let config = loadConfig();
+// first-time setup wizard
+if (!config) {
+    await runSetup();
+    config = loadConfig();
+    if (!config)
+        process.exit(1);
+}
 const client = makeClient(config);
 printBanner(config.model);
 await startRepl(client, config);

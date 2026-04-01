@@ -20,17 +20,8 @@ export function loadConfig() {
         }
     }
     const api_key = envKey || fileConfig.api_key || '';
-    if (!api_key) {
-        console.error([
-            '',
-            '  No API key found. Set one via:',
-            '    monkey config set api_key <key>',
-            '  or environment variable:',
-            '    export MONKEY_API_KEY=<key>',
-            '',
-        ].join('\n'));
-        process.exit(1);
-    }
+    if (!api_key)
+        return null;
     return {
         ...DEFAULTS,
         ...fileConfig,
