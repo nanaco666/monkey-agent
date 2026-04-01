@@ -29,14 +29,6 @@ A terminal-based AI coding assistant powered by Claude. Smart, social (multi-age
 ## Installation
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nanaco666/monkey-agent/main/install.sh | sh
-```
-
-The installer handles PATH setup automatically across macOS and Linux.
-
-Or install from source:
-
-```bash
 git clone https://github.com/nanaco666/monkey-agent.git
 cd monkey-agent
 npm install
