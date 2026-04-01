@@ -31,7 +31,7 @@ const PROVIDERS = [
         fast_models: [],
     },
 ];
-// Fetch models from {base_url}/models (OpenAI-compatible standard)
+// Fetch models from {base_url}/models
 async function fetchModels(base_url, api_key) {
     const url = `${base_url.replace(/\/$/, '')}/models`;
     process.stdout.write(chalk.gray('\n  Fetching available models...'));
@@ -44,9 +44,9 @@ async function fetchModels(base_url, api_key) {
         process.stdout.write('\r\x1B[2K');
         return ids;
     }
-    catch (e) {
+    catch {
         process.stdout.write('\r\x1B[2K');
-        console.log(chalk.yellow(`  Could not fetch models from ${url} — enter model name manually.\n`));
+        console.log(chalk.yellow('  Could not fetch models — enter model name manually.\n'));
         return [];
     }
 }
@@ -113,12 +113,20 @@ export async function runSetup() {
     // base_url for custom
     let base_url = provider.base_url;
     if (base_url === null) {
-        console.log(chalk.gray('\n  e.g. https://your-proxy.com/v1\n'));
-        base_url = (await ask(rl, chalk.bold.rgb(232, 98, 42)('  Base URL: '))).trim();
-        if (!base_url) {
-            console.log(chalk.red('\n  Base URL is required.\n'));
-            rl.close();
-            process.exit(1);
+        console.log(chalk.gray('\n  Include the full API path, e.g.:'));
+        console.log(chalk.gray('    https://your-proxy.com/v1'));
+        console.log(chalk.gray('    https://openrouter.ai/api/v1\n'));
+        while (true) {
+            base_url = (await ask(rl, chalk.bold.rgb(232, 98, 42)('  Base URL: '))).trim();
+            if (!base_url) {
+                console.log(chalk.red('  Base URL is required.'));
+                continue;
+            }
+            if (!base_url.startsWith('http')) {
+                console.log(chalk.red('  Must start with http:// or https://'));
+                continue;
+            }
+            break;
         }
     }
     // API key
