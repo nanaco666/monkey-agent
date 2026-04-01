@@ -33,23 +33,35 @@ const PROVIDERS = [
 ];
 // Fetch models from a /v1/models endpoint
 async function fetchModels(base_url, api_key) {
-    try {
-        process.stdout.write(chalk.gray('  Fetching models...'));
-        const res = await fetch(`${base_url.replace(/\/$/, '')}/models`, {
-            headers: { Authorization: `Bearer ${api_key}` },
-        });
-        if (!res.ok)
-            throw new Error(`${res.status}`);
-        const json = await res.json();
-        const list = json.data ?? json.models ?? [];
-        const ids = list.map((m) => m.id).filter(Boolean).sort();
-        process.stdout.write('\r\x1B[2K'); // clear the "Fetching..." line
-        return ids;
+    const base = base_url.replace(/\/$/, '');
+    // Try the base as-is first (e.g. https://openrouter.ai/api/v1 → /models)
+    // Then try appending /v1 (e.g. https://llm-proxy.tapsvc.com → /v1/models)
+    const urls = base.endsWith('/v1')
+        ? [`${base}/models`]
+        : [`${base}/models`, `${base}/v1/models`];
+    process.stdout.write(chalk.gray('\n  Fetching available models...'));
+    for (const url of urls) {
+        try {
+            const res = await fetch(url, {
+                headers: { Authorization: `Bearer ${api_key}` },
+            });
+            if (!res.ok)
+                continue;
+            const json = await res.json();
+            const list = json.data ?? json.models ?? [];
+            const ids = list.map((m) => m.id).filter(Boolean).sort();
+            if (ids.length > 0) {
+                process.stdout.write('\r\x1B[2K');
+                return ids;
+            }
+        }
+        catch {
+            continue;
+        }
     }
-    catch {
-        process.stdout.write('\r\x1B[2K');
-        return [];
-    }
+    process.stdout.write('\r\x1B[2K');
+    console.log(chalk.red('  Could not fetch models. Check your base URL and API key.\n'));
+    return [];
 }
 // Arrow-key selector. Returns selected index.
 function selectList(label, items, defaultIdx = 0) {

@@ -43,21 +43,36 @@ const PROVIDERS: Provider[] = [
 
 // Fetch models from a /v1/models endpoint
 async function fetchModels(base_url: string, api_key: string): Promise<string[]> {
-  try {
-    process.stdout.write(chalk.gray('  Fetching models...'))
-    const res = await fetch(`${base_url.replace(/\/$/, '')}/models`, {
-      headers: { Authorization: `Bearer ${api_key}` },
-    })
-    if (!res.ok) throw new Error(`${res.status}`)
-    const json = await res.json() as { data?: { id: string }[]; models?: { id: string }[] }
-    const list = json.data ?? json.models ?? []
-    const ids = list.map((m: { id: string }) => m.id).filter(Boolean).sort()
-    process.stdout.write('\r\x1B[2K') // clear the "Fetching..." line
-    return ids
-  } catch {
-    process.stdout.write('\r\x1B[2K')
-    return []
+  const base = base_url.replace(/\/$/, '')
+  // Try the base as-is first (e.g. https://openrouter.ai/api/v1 → /models)
+  // Then try appending /v1 (e.g. https://llm-proxy.tapsvc.com → /v1/models)
+  const urls = base.endsWith('/v1')
+    ? [`${base}/models`]
+    : [`${base}/models`, `${base}/v1/models`]
+
+  process.stdout.write(chalk.gray('\n  Fetching available models...'))
+
+  for (const url of urls) {
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${api_key}` },
+      })
+      if (!res.ok) continue
+      const json = await res.json() as { data?: { id: string }[]; models?: { id: string }[] }
+      const list = json.data ?? json.models ?? []
+      const ids = list.map((m: { id: string }) => m.id).filter(Boolean).sort()
+      if (ids.length > 0) {
+        process.stdout.write('\r\x1B[2K')
+        return ids
+      }
+    } catch {
+      continue
+    }
   }
+
+  process.stdout.write('\r\x1B[2K')
+  console.log(chalk.red('  Could not fetch models. Check your base URL and API key.\n'))
+  return []
 }
 
 // Arrow-key selector. Returns selected index.
