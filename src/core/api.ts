@@ -4,7 +4,7 @@ import { toolDefs } from '../tools/index.js'
 
 export type Message = Anthropic.MessageParam
 
-const SYSTEM_PROMPT = `You are Monkey, an AI coding assistant running in the terminal.
+const SYSTEM_PROMPT_BASE = `You are Monkey, an AI coding assistant running in the terminal.
 You help users with software engineering tasks: reading and writing code, running commands, searching files, debugging, and more.
 
 ## Rules
@@ -16,9 +16,11 @@ You help users with software engineering tasks: reading and writing code, runnin
 - Do not delete files unless explicitly asked.
 - When you make a mistake, fix it directly.
 
-## Working directory
-Current directory: ${process.cwd()}
-`
+## Memory
+You have persistent memory across sessions via the memory_write tool.
+- Use memory_write to save: user preferences, project context, feedback, and important facts.
+- Save memories proactively when you learn something worth remembering.
+- Keep memory entries concise and factual.`
 
 export async function streamResponse(
   client: Anthropic,
@@ -26,20 +28,28 @@ export async function streamResponse(
   messages: Message[],
   onText: (text: string) => void,
   onToolUse: (name: string, input: Record<string, unknown>) => void,
+  memoryContext = '',
 ): Promise<{ toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> }> {
   const toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
+
+  // Fixed part: cached. Dynamic part (cwd + memory): not cached.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const systemBlocks: any[] = [
+    {
+      type: 'text',
+      text: SYSTEM_PROMPT_BASE,
+      cache_control: { type: 'ephemeral' },
+    },
+    {
+      type: 'text',
+      text: `## Working directory\nCurrent directory: ${process.cwd()}${memoryContext}`,
+    },
+  ]
 
   const stream = await client.messages.stream({
     model: config.model,
     max_tokens: 8096,
-    system: [
-      {
-        type: 'text',
-        text: SYSTEM_PROMPT,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        cache_control: { type: 'ephemeral' } as any,
-      },
-    ],
+    system: systemBlocks,
     tools: toolDefs as Anthropic.Tool[],
     messages,
   })

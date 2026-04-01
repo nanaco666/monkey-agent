@@ -7,6 +7,8 @@ import { streamResponse } from './api.js'
 import { executeTool } from '../tools/index.js'
 import { spinner } from '../ui/spinner.js'
 import { kaomoji } from '../ui/kaomoji.js'
+import { buildMemoryContext } from '../memory/context.js'
+import { appendSession } from '../memory/store.js'
 
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ')
 
@@ -28,6 +30,10 @@ function toolColor(name: string) {
 }
 
 function printToolCall(name: string, input: Record<string, unknown>): void {
+  if (name === 'memory_write') {
+    process.stdout.write(chalk.rgb(240, 183, 49)(`\n  ◆ memory  ${input.name ?? ''}\n`))
+    return
+  }
   const color = toolColor(name)
   const detail = input.command ?? input.path ?? input.pattern ?? ''
   const summary = typeof detail === 'string' ? detail.slice(0, 60) : ''
@@ -35,6 +41,11 @@ function printToolCall(name: string, input: Record<string, unknown>): void {
 }
 
 function printToolResult(name: string, result: string, elapsed: number): void {
+  if (name === 'memory_write') {
+    const isError = result.startsWith('Error:')
+    process.stdout.write(isError ? chalk.red(`    ✗ ${result}\n`) : chalk.rgb(240, 183, 49)(`    → remembered\n`))
+    return
+  }
   const isError = result.startsWith('Error:')
   const isWrite = WRITE_TOOLS.has(name)
 
@@ -58,6 +69,17 @@ function printToolResult(name: string, result: string, elapsed: number): void {
 
 export async function startRepl(client: Anthropic, config: Config): Promise<void> {
   const messages: Message[] = []
+  let memoryContext = ''
+
+  // Load memory context once at startup
+  try {
+    spinner.start('loading memory...')
+    memoryContext = await buildMemoryContext(client, config, '')
+    spinner.stop()
+    if (memoryContext) process.stdout.write(chalk.gray('  ◆ memory  context loaded\n'))
+  } catch {
+    spinner.stop()
+  }
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -102,6 +124,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
       }
 
       messages.push({ role: 'user', content: trimmed })
+      appendSession({ ts: new Date().toISOString(), role: 'user', content: trimmed })
       console.log()
 
       let responseText = ''
@@ -136,10 +159,14 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
               clearThinking()
               thinkingStarted = false
             },
+            memoryContext,
           )
 
           clearThinking()
-          if (responseText) process.stdout.write('\n')
+          if (responseText) {
+            process.stdout.write('\n')
+            appendSession({ ts: new Date().toISOString(), role: 'assistant', content: responseText })
+          }
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const assistantBlocks: any[] = []
