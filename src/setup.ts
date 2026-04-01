@@ -41,9 +41,9 @@ const PROVIDERS: Provider[] = [
   },
 ]
 
-// Fetch models from {base_url}/models
+// Fetch models from {base_url}/v1/models
 async function fetchModels(base_url: string, api_key: string): Promise<string[]> {
-  const url = `${base_url.replace(/\/$/, '')}/models`
+  const url = `${base_url.replace(/\/$/, '')}/v1/models`
   process.stdout.write(chalk.gray('\n  Fetching available models...'))
   try {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${api_key}` } })
@@ -124,9 +124,7 @@ export async function runSetup(): Promise<void> {
   // base_url for custom
   let base_url = provider.base_url
   if (base_url === null) {
-    console.log(chalk.gray('\n  Include the full API path, e.g.:'))
-    console.log(chalk.gray('    https://your-proxy.com/v1'))
-    console.log(chalk.gray('    https://openrouter.ai/api/v1\n'))
+    console.log(chalk.gray('\n  e.g. https://your-proxy.com\n'))
     while (true) {
       base_url = (await ask(rl, chalk.bold.rgb(232, 98, 42)('  Base URL: '))).trim()
       if (!base_url) { console.log(chalk.red('  Base URL is required.')); continue }
