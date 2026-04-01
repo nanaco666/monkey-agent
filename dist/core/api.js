@@ -74,6 +74,10 @@ export async function streamResponse(client, config, messages, onText, onToolUse
 export function makeClient(config) {
     return new Anthropic({
         apiKey: config.api_key,
-        ...(config.base_url ? { baseURL: config.base_url } : {}),
+        ...(config.base_url ? {
+            baseURL: config.base_url,
+            // Custom endpoints (proxies, OpenRouter) use Bearer auth instead of x-api-key
+            defaultHeaders: { 'Authorization': `Bearer ${config.api_key}` },
+        } : {}),
     });
 }
