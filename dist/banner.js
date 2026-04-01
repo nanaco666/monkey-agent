@@ -1,4 +1,5 @@
 import chalk from 'chalk';
+import { kaomoji } from './ui/kaomoji.js';
 // Color per letter column: M O N K E Y
 // Column boundaries measured from the figlet output
 const COLS = [
@@ -15,13 +16,6 @@ function colorLine(line) {
         return col ? col.color(ch) : ch;
     }).join('');
 }
-const KAOMOJI = [
-    '⊂((￣⊥￣))⊃',
-    '⊂((・⊥・))⊃',
-    '⊂((≧⊥≦))⊃',
-    '⊂((*＞⊥σ))⊃',
-    '⊂((。・o・))⊃',
-];
 const BIG = [
     '███╗   ███╗ ██████╗ ███╗   ██╗██╗  ██╗███████╗██╗   ██╗',
     '████╗ ████║██╔═══██╗████╗  ██║██║ ██╔╝██╔════╝╚██╗ ██╔╝',
@@ -31,7 +25,6 @@ const BIG = [
     '╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝   ╚═╝  ',
 ];
 export function printBanner(model, version = '0.1.0') {
-    const kaomoji = KAOMOJI[Math.floor(Math.random() * KAOMOJI.length)];
     console.log();
     BIG.forEach(line => console.log('  ' + colorLine(line)));
     console.log();
@@ -39,6 +32,6 @@ export function printBanner(model, version = '0.1.0') {
         '    ' + chalk.rgb(245, 242, 235)(`v${version}`) +
         '  ' + chalk.rgb(107, 140, 78)('●') +
         ' ' + chalk.rgb(245, 242, 235)(model) +
-        '    ' + chalk.rgb(240, 183, 49)(kaomoji));
+        '    ' + chalk.rgb(240, 183, 49)(kaomoji.random()));
     console.log();
 }
