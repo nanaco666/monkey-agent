@@ -32,6 +32,12 @@ A terminal-based AI coding assistant powered by Claude. Smart, social (multi-age
 npm install -g github:nanaco666/monkey-agent
 ```
 
+**macOS (Homebrew Node):** if `monkey` says `command not found` after install, add Homebrew to your PATH:
+
+```bash
+echo 'export PATH="/opt/homebrew/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
 Or install from source:
 
 ```bash
