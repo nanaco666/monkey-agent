@@ -29,7 +29,7 @@ A terminal-based AI coding assistant powered by Claude. Smart, social (multi-age
 ## Installation
 
 ```bash
-npm install -g monkey-agent
+npm install -g github:nanaco666/monkey-agent
 ```
 
 Or install from source:
