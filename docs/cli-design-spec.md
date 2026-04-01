@@ -59,12 +59,14 @@ Used for any single-choice selection (provider, model, etc.).
 - Value typed inline
 - Hint/default shown in brackets: `Label [default]: `
 
-### Implementation: never use readline for text input in setup
+### Implementation: never use readline for any TTY input
 
-`readline.createInterface()` + `rl.close()` destroys the underlying stdin stream.
-Any subsequent raw keypress listener (`process.stdin.on('keypress', ...)`) will stop receiving events.
+Two separate issues require avoiding readline entirely:
 
-**Rule:** use raw stdin directly for all input in setup wizard. One consistent approach end-to-end.
+1. `readline.createInterface()` + `rl.close()` destroys the underlying stdin stream — subsequent raw keypress listeners stop receiving events.
+2. `readline.createInterface({ terminal: true })` does its own cursor management that conflicts with direct `process.stdout.write()` calls — text written to stdout can be overwritten/erased by readline's internal redraw.
+
+**Rule:** use raw stdin directly for ALL input — setup wizard AND main REPL. Never mix readline terminal mode with direct stdout writes.
 
 ```ts
 // ✓ correct — raw stdin, no readline
