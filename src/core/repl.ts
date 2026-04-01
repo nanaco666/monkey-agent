@@ -105,14 +105,18 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
       console.log()
 
       let responseText = ''
+      let thinkingTimer: ReturnType<typeof setTimeout> | null = null
+
+      const clearThinking = () => {
+        if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null }
+        spinner.stop()
+      }
 
       try {
         while (true) {
           responseText = ''
           let thinkingStarted = false
-          let thinkingTimer: ReturnType<typeof setTimeout> | null = null
 
-          // delay spinner — only show if AI takes >300ms to start
           thinkingTimer = setTimeout(() => {
             thinkingStarted = true
             spinner.start('thinking...')
@@ -123,19 +127,18 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
             config,
             messages,
             (text) => {
-              if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null }
-              if (thinkingStarted) { spinner.stop(); thinkingStarted = false }
+              if (!thinkingStarted) { clearTimeout(thinkingTimer!); thinkingTimer = null }
+              else { clearThinking(); thinkingStarted = false }
               process.stdout.write(chalk.white(text))
               responseText += text
             },
-            (name, _input) => {
-              if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null }
-              if (thinkingStarted) { spinner.stop(); thinkingStarted = false }
+            (_name, _input) => {
+              clearThinking()
+              thinkingStarted = false
             },
           )
 
-          if (thinkingTimer) clearTimeout(thinkingTimer)
-          if (thinkingStarted) spinner.stop()
+          clearThinking()
           if (responseText) process.stdout.write('\n')
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -178,7 +181,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
           console.log()
         }
       } catch (err: unknown) {
-        spinner.stop()
+        clearThinking()
         const msg = (err as Error).message || String(err)
         console.log(chalk.red(`\n  ✗ ${msg}`))
         console.log(chalk.rgb(240, 183, 49)(`  ${kaomoji.crash()}\n`))
