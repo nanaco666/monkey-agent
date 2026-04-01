@@ -64,43 +64,36 @@ Claude: 好的，已取消删除操作。
 
 ---
 
-## Phase 3 — 记忆系统（目标：1 天）
+## Phase 3 — 记忆系统 ✓ 已完成
 
 **目标：** 对话信息持久化，下次启动自动加载相关背景
 
 ### 文件结构
 ```
-~/.claude-client/
+~/.monkey-cli/
   memory/
     {project-slug}/
-      MEMORY.md           — 索引
-      user-role.md        — 用户背景
-      project-xxx.md      — 项目信息
-      feedback-xxx.md     — 偏好反馈
+      MEMORY.md           — 自动维护的索引
+      *.md                — topic 文件（user/feedback/project/reference）
       sessions/
         2026-04-01.jsonl  — 当天对话记录
 ```
 
-### 任务清单
+### 实现
 
-- [ ] `memory/index.ts`：
-  - 读取 `MEMORY.md` 作为基础上下文（每次都加载）
-  - 读取所有 topic 文件的 frontmatter（name + description）
-  - 用 API 调用小模型（sonnet）选出最相关的 ≤5 个文件
-  - 把选中文件的内容拼入 system prompt 动态部分
-- [ ] `memory/session.ts`：每轮对话 append 到当天的 JSONL 文件
-- [ ] `core/repl.ts`：对话结束时检测到 AI 提到"记住"/"我注意到"等，触发写记忆
+- [x] `src/memory/slug.ts` — 从 git root 或 cwd 生成项目标识
+- [x] `src/memory/store.ts` — 读写 memory 文件，自动更新 MEMORY.md 索引
+- [x] `src/memory/context.ts` — 启动时加载 MEMORY.md，用 fast_model 选最相关 ≤5 个文件注入 system prompt
+- [x] `src/tools/memory.ts` — `memory_write` 工具，AI 主动调用保存记忆
+- [x] `core/repl.ts` — 每轮对话 append 到 sessions JSONL
+- [x] system prompt 注入 memory 路径，AI 可用 read 工具直接读取
 
-**验收：**
-```bash
-# 第一次
-> 我不喜欢你在回答末尾总结
-[Claude 把这个偏好写入 feedback-response-style.md]
+### 设计决策
 
-# 重新启动后
-> 帮我写代码
-[Claude 不再在末尾总结，因为加载了偏好记忆]
-```
+- AI 通过 `memory_write` 工具主动写记忆，不靠关键词检测
+- memory 路径明确注入 system prompt，AI 不需要猜路径
+- Do NOT use bash 搜索 memory 文件，用 read 工具 + 已知路径
+- topic 文件超过 5 个时，用 fast_model 选相关的，减少 token 消耗
 
 ---
 
