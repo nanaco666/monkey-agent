@@ -1,5 +1,5 @@
 import chalk from 'chalk'
-import { saveConfig } from './config/index.js'
+import { saveConfig, getEnvDefaults } from './config/index.js'
 import { selectList } from './ui/select.js'
 import { askRaw } from './ui/input.js'
 import { spinner } from './ui/spinner.js'
@@ -54,6 +54,7 @@ async function fetchModels(base_url: string, api_key: string): Promise<string[]>
 }
 
 export async function runSetup(): Promise<void> {
+  const envDefaults = getEnvDefaults()
   console.log(chalk.rgb(245, 242, 235)('\n  Welcome. Let\'s get you set up.\n'))
 
   // ── Provider
@@ -65,9 +66,11 @@ export async function runSetup(): Promise<void> {
   let base_url = provider.base_url
   if (base_url === null) {
     divider('Endpoint')
-    hint('e.g. https://your-proxy.com\n')
+    if (envDefaults.base_url) hint(`Detected from environment — press Enter to use it\n`)
+    else hint('e.g. https://your-proxy.com\n')
     while (true) {
-      base_url = (await askRaw('  Base URL: ')).trim()
+      const input = (await askRaw('  Base URL: ')).trim()
+      base_url = input || envDefaults.base_url
       if (!base_url) { error('Base URL is required.'); continue }
       if (!base_url.startsWith('http')) { error('Must start with http:// or https://'); continue }
       break
@@ -77,9 +80,11 @@ export async function runSetup(): Promise<void> {
   // ── API Key
   divider('API Key')
   if (provider.key_url) hint(`Get your key: ${provider.key_url}\n`)
+  if (envDefaults.api_key) hint(`Detected from environment — press Enter to use it\n`)
   let api_key = ''
   while (true) {
-    api_key = (await askRaw('  API key: ')).trim()
+    const input = (await askRaw('  API key: ')).trim()
+    api_key = input || envDefaults.api_key
     if (api_key) break
     error('API key is required.')
   }
