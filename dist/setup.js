@@ -140,7 +140,7 @@ export async function runSetup() {
         process.exit(1);
     }
     rl.close();
-    // For providers without hardcoded models, fetch from /v1/models
+    // For providers without hardcoded models, fetch from models endpoint
     let modelList = provider.models;
     if (modelList.length === 0 && base_url) {
         const { ids, triedUrls } = await fetchModels(base_url, api_key);
@@ -148,8 +148,20 @@ export async function runSetup() {
             modelList = ids.map(id => ({ id, label: id }));
         }
         else {
-            console.log(chalk.yellow(`  Auto-discovery failed (tried: ${triedUrls.join(', ')})`));
-            console.log(chalk.gray('  Enter model names manually.\n'));
+            // Auto-discovery failed — ask user for the correct endpoint
+            console.log(chalk.yellow(`\n  Auto-discovery failed (tried: ${triedUrls.join(', ')})`));
+            const rlm = readline.createInterface({ input: process.stdin, output: process.stdout });
+            const customModelsUrl = (await ask(rlm, chalk.bold.rgb(232, 98, 42)(`  Models endpoint (leave blank to enter manually): `))).trim();
+            rlm.close();
+            if (customModelsUrl) {
+                const { ids: retryIds } = await fetchModels(customModelsUrl.replace(/\/models$/, ''), api_key);
+                if (retryIds.length > 0) {
+                    modelList = retryIds.map(id => ({ id, label: id }));
+                }
+                else {
+                    console.log(chalk.yellow('  Still no models found. Enter manually.\n'));
+                }
+            }
         }
     }
     let model;
