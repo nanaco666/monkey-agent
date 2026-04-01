@@ -17,7 +17,7 @@ const DEFAULTS: Omit<Config, 'api_key'> = {
   fast_model: 'claude-sonnet-4-6',
 }
 
-export function loadConfig(): Config {
+export function loadConfig(): Config | null {
   // Priority: env vars > config file > defaults
   const envKey = process.env.MONKEY_API_KEY || process.env.ANTHROPIC_API_KEY
 
@@ -31,18 +31,7 @@ export function loadConfig(): Config {
   }
 
   const api_key = envKey || fileConfig.api_key || ''
-
-  if (!api_key) {
-    console.error([
-      '',
-      '  No API key found. Set one via:',
-      '    monkey config set api_key <key>',
-      '  or environment variable:',
-      '    export MONKEY_API_KEY=<key>',
-      '',
-    ].join('\n'))
-    process.exit(1)
-  }
+  if (!api_key) return null
 
   return {
     ...DEFAULTS,
