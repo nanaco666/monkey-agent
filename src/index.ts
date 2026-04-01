@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { loadConfig } from './config/index.js'
 import { printBanner } from './banner.js'
 import { makeClient } from './core/api.js'

@@ -29,9 +29,17 @@ A terminal-based AI coding assistant powered by Claude. Smart, social (multi-age
 ## Installation
 
 ```bash
+npm install -g monkey-agent
+```
+
+Or install from source:
+
+```bash
 git clone https://github.com/nanaco666/monkey-agent.git
 cd monkey-agent
 npm install
+npm run build
+npm install -g .
 ```
 
 ## Setup
@@ -39,28 +47,18 @@ npm install
 Set your API key (one-time):
 
 ```bash
-# Option 1: environment variable (per session)
-export ANTHROPIC_API_KEY=sk-ant-...
+monkey config set api_key sk-ant-...
+```
 
-# Option 2: save permanently
-node --loader ts-node/esm --no-warnings src/index.ts config set api_key sk-ant-...
+Or use an environment variable:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
 ```
 
 The key is saved to `~/.monkey-cli/config.json`.
 
 ## Usage
-
-```bash
-node --loader ts-node/esm --no-warnings src/index.ts
-```
-
-Or add to your shell for convenience:
-
-```bash
-alias monkey="node --loader ts-node/esm --no-warnings /path/to/monkey-agent/src/index.ts"
-```
-
-Then just:
 
 ```bash
 monkey

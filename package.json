@@ -1,16 +1,20 @@
 {
-  "name": "monkey-cli",
+  "name": "monkey-agent",
   "version": "0.1.0",
-  "description": "The AI that evolves",
+  "description": "The AI coding assistant that evolves",
   "type": "module",
   "bin": {
     "monkey": "./dist/index.js"
   },
   "scripts": {
-    "dev": "node --loader ts-node/esm src/index.ts",
-    "build": "tsc",
+    "dev": "node --loader ts-node/esm --no-warnings src/index.ts",
+    "build": "tsc && chmod +x dist/index.js",
+    "prepare": "npm run build",
     "start": "node dist/index.js"
   },
+  "files": [
+    "dist"
+  ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
     "chalk": "^5.4.1",
