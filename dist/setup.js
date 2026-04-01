@@ -47,12 +47,16 @@ const PROVIDERS = [
 function selectList(label, items, defaultIdx = 0) {
     return new Promise(resolve => {
         let cursor = defaultIdx;
+        let rendered = false;
+        // total lines printed: 1 blank + 1 label + 1 blank + N items = N+3
+        const totalLines = items.length + 3;
         const render = () => {
-            // move cursor up by item count + 1 to redraw
-            if (rendered)
-                process.stdout.write(`\x1B[${items.length + 1}A`);
+            if (rendered) {
+                // move up to start of block, clear to end of screen
+                process.stdout.write(`\x1B[${totalLines}A\x1B[0J`);
+            }
             rendered = true;
-            process.stdout.write(chalk.rgb(245, 242, 235)(`\n  ${label}\n`));
+            process.stdout.write(chalk.rgb(245, 242, 235)(`\n  ${label}\n\n`));
             items.forEach((item, i) => {
                 if (i === cursor) {
                     process.stdout.write(chalk.bold.rgb(232, 98, 42)(`    ❯ ${item}\n`));
@@ -62,13 +66,15 @@ function selectList(label, items, defaultIdx = 0) {
                 }
             });
         };
-        let rendered = false;
+        // hide cursor while selecting
+        process.stdout.write('\x1B[?25l');
         render();
         readline.emitKeypressEvents(process.stdin);
         if (process.stdin.isTTY)
             process.stdin.setRawMode(true);
         const onKey = (_, key) => {
             if (key.ctrl && key.name === 'c') {
+                process.stdout.write('\x1B[?25h');
                 process.exit(0);
             }
             if (key.name === 'up') {
@@ -83,7 +89,7 @@ function selectList(label, items, defaultIdx = 0) {
                 process.stdin.removeListener('keypress', onKey);
                 if (process.stdin.isTTY)
                     process.stdin.setRawMode(false);
-                process.stdout.write('\n');
+                process.stdout.write('\x1B[?25h\n');
                 resolve(cursor);
             }
         };
