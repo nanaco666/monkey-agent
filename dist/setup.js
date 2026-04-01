@@ -32,19 +32,16 @@ const PROVIDERS = [
     },
 ];
 // Fetch models from a /v1/models endpoint
+// Returns { ids, triedUrls } — ids is empty if all attempts failed
 async function fetchModels(base_url, api_key) {
     const base = base_url.replace(/\/$/, '');
-    // Try the base as-is first (e.g. https://openrouter.ai/api/v1 → /models)
-    // Then try appending /v1 (e.g. https://llm-proxy.tapsvc.com → /v1/models)
-    const urls = base.endsWith('/v1')
+    const triedUrls = base.endsWith('/v1')
         ? [`${base}/models`]
         : [`${base}/models`, `${base}/v1/models`];
     process.stdout.write(chalk.gray('\n  Fetching available models...'));
-    for (const url of urls) {
+    for (const url of triedUrls) {
         try {
-            const res = await fetch(url, {
-                headers: { Authorization: `Bearer ${api_key}` },
-            });
+            const res = await fetch(url, { headers: { Authorization: `Bearer ${api_key}` } });
             if (!res.ok)
                 continue;
             const json = await res.json();
@@ -52,7 +49,7 @@ async function fetchModels(base_url, api_key) {
             const ids = list.map((m) => m.id).filter(Boolean).sort();
             if (ids.length > 0) {
                 process.stdout.write('\r\x1B[2K');
-                return ids;
+                return { ids, triedUrls };
             }
         }
         catch {
@@ -60,8 +57,7 @@ async function fetchModels(base_url, api_key) {
         }
     }
     process.stdout.write('\r\x1B[2K');
-    console.log(chalk.red('  Could not fetch models. Check your base URL and API key.\n'));
-    return [];
+    return { ids: [], triedUrls };
 }
 // Arrow-key selector. Returns selected index.
 function selectList(label, items, defaultIdx = 0) {
@@ -147,9 +143,13 @@ export async function runSetup() {
     // For providers without hardcoded models, fetch from /v1/models
     let modelList = provider.models;
     if (modelList.length === 0 && base_url) {
-        const ids = await fetchModels(base_url, api_key);
+        const { ids, triedUrls } = await fetchModels(base_url, api_key);
         if (ids.length > 0) {
             modelList = ids.map(id => ({ id, label: id }));
+        }
+        else {
+            console.log(chalk.yellow(`  Auto-discovery failed (tried: ${triedUrls.join(', ')})`));
+            console.log(chalk.gray('  Enter model names manually.\n'));
         }
     }
     let model;
@@ -164,7 +164,7 @@ export async function runSetup() {
         // fallback: type manually
         const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout });
         while (true) {
-            model = (await ask(rl2, chalk.bold.rgb(232, 98, 42)('\n  Model (required): '))).trim();
+            model = (await ask(rl2, chalk.bold.rgb(232, 98, 42)('  Main model: '))).trim();
             if (model)
                 break;
             console.log(chalk.red('  Model name cannot be empty.'));
