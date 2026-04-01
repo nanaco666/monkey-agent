@@ -19,7 +19,8 @@ const DEFAULTS: Omit<Config, 'api_key'> = {
 
 export function loadConfig(): Config | null {
   // Priority: env vars > config file > defaults
-  const envKey = process.env.MONKEY_API_KEY || process.env.ANTHROPIC_API_KEY
+  const envKey     = process.env.MONKEY_API_KEY || process.env.ANTHROPIC_API_KEY
+  const envBaseUrl = process.env.MONKEY_BASE_URL || process.env.ANTHROPIC_BASE_URL
 
   let fileConfig: Partial<Config> = {}
   if (existsSync(CONFIG_FILE)) {
@@ -37,6 +38,8 @@ export function loadConfig(): Config | null {
     ...DEFAULTS,
     ...fileConfig,
     api_key,
+    ...(envBaseUrl ? { base_url: envBaseUrl } : {}),
+    ...(envKey     ? { api_key: envKey }      : {}),
   }
 }
 
