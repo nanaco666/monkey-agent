@@ -11,24 +11,18 @@ const PROVIDERS = [
             { id: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5      — balanced' },
             { id: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5       — fastest, cheapest' },
         ],
-        fast_models: [
-            { id: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5       — recommended for quick tasks' },
-            { id: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5      — balanced' },
-        ],
     },
     {
         name: 'OpenRouter',
         base_url: 'https://openrouter.ai/api/v1',
         key_url: 'https://openrouter.ai/keys',
         models: [],
-        fast_models: [],
     },
     {
         name: 'Custom endpoint',
         base_url: null,
         key_url: null,
         models: [],
-        fast_models: [],
     },
 ];
 // Fetch models from {base_url}/v1/models
@@ -50,17 +44,49 @@ async function fetchModels(base_url, api_key) {
         return [];
     }
 }
+// Text input using raw process.stdin (no readline interface needed)
+function askRaw(question) {
+    return new Promise(resolve => {
+        process.stdout.write(question);
+        readline.emitKeypressEvents(process.stdin);
+        if (process.stdin.isTTY)
+            process.stdin.setRawMode(true);
+        let input = '';
+        const onKey = (_, key) => {
+            if (key.ctrl && key.name === 'c') {
+                process.stdout.write('\n');
+                process.exit(0);
+            }
+            if (key.name === 'return') {
+                process.stdin.removeListener('keypress', onKey);
+                if (process.stdin.isTTY)
+                    process.stdin.setRawMode(false);
+                process.stdout.write('\n');
+                resolve(input);
+            }
+            else if (key.name === 'backspace') {
+                if (input.length > 0) {
+                    input = input.slice(0, -1);
+                    process.stdout.write('\x1B[1D \x1B[1D'); // erase last char
+                }
+            }
+            else if (key.sequence && !key.ctrl) {
+                input += key.sequence;
+                process.stdout.write(key.sequence);
+            }
+        };
+        process.stdin.on('keypress', onKey);
+    });
+}
 // Arrow-key selector. Returns selected index.
 function selectList(label, items, defaultIdx = 0) {
     return new Promise(resolve => {
         let cursor = defaultIdx;
         let rendered = false;
-        // total lines: 1 blank + 1 label + 1 blank + N items = N+3
         const totalLines = items.length + 3;
         const render = () => {
-            if (rendered) {
+            if (rendered)
                 process.stdout.write(`\x1B[${totalLines}A\x1B[0J`);
-            }
             rendered = true;
             process.stdout.write(chalk.rgb(245, 242, 235)(`\n  ${label}\n\n`));
             items.forEach((item, i) => {
@@ -101,21 +127,16 @@ function selectList(label, items, defaultIdx = 0) {
         process.stdin.on('keypress', onKey);
     });
 }
-function ask(rl, question) {
-    return new Promise(resolve => rl.question(question, resolve));
-}
 export async function runSetup() {
     console.log(chalk.rgb(245, 242, 235)('\n  Welcome to Monkey Agent. Let\'s get you set up.\n'));
-    // Choose provider
     const providerIdx = await selectList('Choose a provider:', PROVIDERS.map(p => p.name));
     const provider = PROVIDERS[providerIdx];
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-    // base_url for custom
+    // base_url
     let base_url = provider.base_url;
     if (base_url === null) {
         console.log(chalk.gray('\n  e.g. https://your-proxy.com\n'));
         while (true) {
-            base_url = (await ask(rl, chalk.bold.rgb(232, 98, 42)('  Base URL: '))).trim();
+            base_url = (await askRaw(chalk.bold.rgb(232, 98, 42)('  Base URL: '))).trim();
             if (!base_url) {
                 console.log(chalk.red('  Base URL is required.'));
                 continue;
@@ -128,17 +149,16 @@ export async function runSetup() {
         }
     }
     // API key
-    if (provider.key_url) {
+    if (provider.key_url)
         console.log(chalk.gray(`\n  Get your API key: ${provider.key_url}\n`));
+    let api_key = '';
+    while (true) {
+        api_key = (await askRaw(chalk.bold.rgb(232, 98, 42)('  API key: '))).trim();
+        if (api_key)
+            break;
+        console.log(chalk.red('  API key is required.'));
     }
-    const api_key = (await ask(rl, chalk.bold.rgb(232, 98, 42)('  API key: '))).trim();
-    if (!api_key) {
-        console.log(chalk.red('\n  API key is required.\n'));
-        rl.close();
-        process.exit(1);
-    }
-    rl.close();
-    // For providers without hardcoded models, fetch from {base_url}/models
+    // Model list
     let modelList = provider.models;
     if (modelList.length === 0 && base_url) {
         const ids = await fetchModels(base_url, api_key);
@@ -154,18 +174,14 @@ export async function runSetup() {
         fast_model = modelList[fastIdx].id;
     }
     else {
-        // fallback: type manually
-        const rl2 = readline.createInterface({ input: process.stdin, output: process.stdout });
         while (true) {
-            model = (await ask(rl2, chalk.bold.rgb(232, 98, 42)('  Main model: '))).trim();
+            model = (await askRaw(chalk.bold.rgb(232, 98, 42)('\n  Main model: '))).trim();
             if (model)
                 break;
             console.log(chalk.red('  Model name cannot be empty.'));
         }
-        fast_model = (await ask(rl2, chalk.bold.rgb(232, 98, 42)(`  Fast model [${model}]: `))).trim() || model;
-        rl2.close();
+        fast_model = (await askRaw(chalk.bold.rgb(232, 98, 42)(`  Fast model [${model}]: `))).trim() || model;
     }
-    // Save
     const cfg = { api_key, model, fast_model };
     if (base_url)
         cfg.base_url = base_url;
