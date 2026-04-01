@@ -8,27 +8,30 @@ const DEFAULTS = {
     fast_model: 'claude-sonnet-4-6',
 };
 export function loadConfig() {
-    // Priority: env vars > config file > defaults
-    const envKey = process.env.MONKEY_API_KEY || process.env.ANTHROPIC_API_KEY;
-    const envBaseUrl = process.env.MONKEY_BASE_URL || process.env.ANTHROPIC_BASE_URL;
+    // No config file = must run setup
+    if (!existsSync(CONFIG_FILE))
+        return null;
     let fileConfig = {};
-    if (existsSync(CONFIG_FILE)) {
-        try {
-            fileConfig = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
-        }
-        catch {
-            // ignore malformed config
-        }
+    try {
+        fileConfig = JSON.parse(readFileSync(CONFIG_FILE, 'utf-8'));
     }
-    const api_key = envKey || fileConfig.api_key || '';
+    catch {
+        return null;
+    }
+    const api_key = fileConfig.api_key || '';
     if (!api_key)
         return null;
     return {
         ...DEFAULTS,
         ...fileConfig,
         api_key,
-        ...(envBaseUrl ? { base_url: envBaseUrl } : {}),
-        ...(envKey ? { api_key: envKey } : {}),
+    };
+}
+// Env vars for setup pre-fill only
+export function getEnvDefaults() {
+    return {
+        api_key: process.env.MONKEY_API_KEY || process.env.ANTHROPIC_API_KEY || '',
+        base_url: process.env.MONKEY_BASE_URL || process.env.ANTHROPIC_BASE_URL || '',
     };
 }
 export function saveConfig(partial) {
