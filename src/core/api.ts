@@ -33,7 +33,7 @@ export async function streamResponse(
   onText: (text: string) => void,
   onToolUse: (name: string, input: Record<string, unknown>) => void,
   memoryContext = '',
-): Promise<{ toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> }> {
+): Promise<{ toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>; inputTokens: number }> {
   const toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
 
   // Fixed part: cached. Dynamic part (cwd + memory): not cached.
@@ -93,7 +93,8 @@ export async function streamResponse(
     }
   }
 
-  return { toolUses }
+  const finalMsg = await stream.finalMessage()
+  return { toolUses, inputTokens: finalMsg.usage.input_tokens }
 }
 
 export function makeClient(config: Config): Anthropic {
