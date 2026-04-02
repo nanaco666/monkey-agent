@@ -119,7 +119,7 @@ Claude: 好的，已取消删除操作。
 
 ---
 
-## Phase 5 — 斜杠命令（目标：半天）
+## Phase 5 — 斜杠命令 ✓ 已完成
 
 **目标：** 常用操作一键触发，有明确的工具权限边界
 
@@ -127,19 +127,22 @@ Claude: 好的，已取消删除操作。
 
 | 命令 | 功能 | 工具白名单 |
 |------|------|-----------|
-| `/commit` | 生成 git commit | `bash(git *)` only |
+| `/commit` | 生成 git commit | `bash` only |
 | `/plan` | 进入计划模式，只读不写 | `read, glob, grep` only |
-| `/memory` | 查看/编辑当前记忆 | 打开 MEMORY.md |
+| `/memory` | 查看/管理当前记忆 | `read, memory_write` only |
 | `/help` | 显示所有命令 | 无 |
-| `/model <name>` | 切换模型 | 无 |
+| `/model` | 显示当前模型 | 无 |
 | `/clear` | 清空当前对话历史 | 无 |
+| `/wild` | 解锁危险命令 🐒 | 无 |
+| `/tame` | 恢复安全模式 | 无 |
 
-### 任务清单
+### 实现
 
-- [ ] `commands/` 目录结构，每个命令一个文件
-- [ ] `core/repl.ts` 中识别 `/` 开头的输入并路由
-- [ ] 每个命令模块导出统一接口：`{ name, description, allowedTools, buildPrompt }`
-- [ ] 支持用户在 `~/.claude-client/commands/` 放自定义命令脚本
+- [x] `src/commands/` 目录，每个命令一个文件
+- [x] `core/repl.ts` 中识别 `/` 开头并路由
+- [x] 每个命令导出统一接口：`{ name, description, allowedTools, buildPrompt }`
+- [x] 斜杠命令作为独立 one-shot 对话运行，不污染主 messages 历史
+- [x] `streamResponse` 支持 `allowedTools` 参数过滤工具
 
 ---
 
