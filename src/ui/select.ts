@@ -15,7 +15,7 @@ export function selectList(label: string, items: string[], defaultIdx = 0): Prom
         if (i === cursor) {
           process.stdout.write(chalk.bold.rgb(232, 98, 42)(`    ❯ ${item}\n`))
         } else {
-          process.stdout.write(chalk.gray(`      ${item}\n`))
+          process.stdout.write(chalk.dim(`      ${item}\n`))
         }
       })
     }

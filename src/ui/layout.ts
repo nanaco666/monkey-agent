@@ -4,7 +4,7 @@ const WIDTH = 42
 
 export function divider(label: string): void {
   const line = `── ${label} ${'─'.repeat(Math.max(0, WIDTH - label.length - 4))}`
-  console.log(chalk.gray(`\n  ${line}\n`))
+  console.log(chalk.dim(`\n  ${line}\n`))
 }
 
 export function success(msg: string): void {
@@ -16,5 +16,5 @@ export function error(msg: string): void {
 }
 
 export function hint(msg: string): void {
-  console.log(chalk.gray(`  ${msg}`))
+  console.log(chalk.dim(`  ${msg}`))
 }

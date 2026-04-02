@@ -196,30 +196,56 @@ Two global modes toggled by slash commands — no per-operation confirmation dia
 
 On block: return `Error: command blocked in tame mode. Switch to wild mode with /wild to allow.` — AI sees this and tells the user.
 
-## REPL input: wide character backspace
+## REPL input: segment-based input model
 
-Raw stdin backspace handler must account for wide characters (CJK, emoji = 2 columns).
+The input state is represented as a list of **segments** rather than a flat string.
+This decouples "what is displayed on screen" from "what text will be sent to the AI",
+which is necessary for paste labels and wide-character backspace to work correctly.
 
 ```ts
-function charWidth(ch: string): number {
-  const cp = ch.codePointAt(0) ?? 0
-  // CJK unified, fullwidth, emoji ranges
-  if (cp >= 0x1100 && ...) return 2
-  return 1
-}
-
-// on backspace:
-const ch = [...input].at(-1) ?? ''
-const w = charWidth(ch)
-input = input.slice(0, -ch.length) // remove by code point
-process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+type TypedSegment = { kind: 'typed'; text: string }
+type PasteSegment = { kind: 'paste'; text: string; label: string }
+type Segment = TypedSegment | PasteSegment
 ```
 
-Never use `\x1B[1D` blindly — use the actual display width.
+- `TypedSegment.text` — actual characters typed, echoed 1:1
+- `PasteSegment.text` — actual pasted content (sent to AI)
+- `PasteSegment.label` — short label shown on screen, e.g. `[pasted 42 chars]`
+- `fullInput()` = `segments.map(s => s.text).join('')`
+
+A fresh `TypedSegment` is always appended after each paste so that subsequent
+typing always lands in a typed segment.
+
+## REPL input: wide character backspace
+
+Raw stdin backspace handler must account for wide characters (CJK, emoji = 2 columns)
+**and** the segment model.
+
+```ts
+function charDisplayWidth(ch: string): number {
+  const cp = ch.codePointAt(0) ?? 0
+  // CJK unified, fullwidth, emoji ranges → 2 columns
+  if (cp >= 0x4E00 && cp <= 0x9FFF /* etc. */) return 2
+  return 1
+}
+```
+
+Backspace algorithm (operates on `segments[]`):
+
+1. While last segment is an empty `TypedSegment` and second-to-last is a `PasteSegment`:
+   → erase the entire paste label (`label.length` columns) and remove both segments.
+2. Otherwise if last typed segment has chars: remove last code point, erase its display width.
+3. Never use `\x1B[1D` blindly — always use the actual display width.
+
+```ts
+// Erase N terminal columns and move cursor back:
+process.stdout.write(`\x1B[${N}D${' '.repeat(N)}\x1B[${N}D`)
+```
 
 ## REPL input: bracketed paste mode
 
-Without bracketed paste, pasted text arrives as rapid keypress events. If paste contains a newline, it triggers immediate send. Remaining text after the newline is lost.
+Without bracketed paste, pasted text arrives as rapid keypress events. If paste contains
+a newline, it triggers immediate send and the rest of the text is lost.
 
 **Solution:** enable bracketed paste mode when entering raw input.
 
@@ -236,17 +262,22 @@ Terminal wraps paste content with:
 ```
 
 **Behavior when paste detected:**
-1. Buffer all content between `\x1B[200~` and `\x1B[201~`
-2. Do NOT echo characters individually during paste
-3. On paste end: append buffer to input, display `[pasted text]` inline (gray)
-4. User can then review and press Enter to send
+1. Buffer all content between `\x1B[200~` and `\x1B[201~` — do NOT echo
+2. Strip `\r\n` → single space, trim
+3. Push a `PasteSegment` + fresh empty `TypedSegment`
+4. Print `[pasted N chars]` label inline (gray), then print a preview line below,
+   then redraw the full prompt line so the cursor is correctly positioned
 
 Display format:
 ```
-❯ [pasted text]▌
+❯ some typed text [pasted 42 chars]▌
+  first 120 chars of pasted content…   ← preview line (gray)
+❯ some typed text [pasted 42 chars]▌   ← prompt redrawn, cursor at end
 ```
 
-The actual pasted content is in `input` (sent to AI), but terminal only shows the label.
+The actual pasted content is in `PasteSegment.text` and is included in `fullInput()`
+sent to the AI. The terminal only shows the short label — cursor tracking is exact
+because backspace erases `label.length` columns atomically (not char by char).
 
 ## Banner
 
