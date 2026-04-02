@@ -26,7 +26,7 @@ const TOOL_MESSAGES: Record<string, string> = {
 const WRITE_TOOLS = new Set(['write', 'edit'])
 
 function toolColor(name: string) {
-  return WRITE_TOOLS.has(name) ? chalk.rgb(107, 140, 78) : chalk.gray
+  return WRITE_TOOLS.has(name) ? chalk.rgb(107, 140, 78) : chalk.dim
 }
 
 function printToolCall(name: string, input: Record<string, unknown>): void {
@@ -63,8 +63,8 @@ function printToolResult(name: string, result: string, elapsed: number): void {
   const firstLine = result.split('\n')[0].slice(0, 60)
   const lineCount = result.split('\n').length
   const summary = lineCount > 1 ? `${firstLine}  (${lineCount} lines)` : firstLine
-  const timeHint = elapsed > 1000 ? chalk.gray(` ${(elapsed / 1000).toFixed(1)}s`) : ''
-  process.stdout.write(chalk.gray(`    → ${summary}${timeHint}\n`))
+  const timeHint = elapsed > 1000 ? chalk.dim(` ${(elapsed / 1000).toFixed(1)}s`) : ''
+  process.stdout.write(chalk.dim(`    → ${summary}${timeHint}\n`))
 }
 
 // Returns the display width of a single character (wide chars like CJK/emoji = 2)
@@ -92,6 +92,18 @@ function charDisplayWidth(ch: string): number {
   return 1
 }
 
+// A segment is either a typed string or a paste block.
+// We track segments so that backspace knows what is displayed on screen for each
+// piece of input (typed chars echo 1:1; a paste block shows a short label).
+type TypedSegment = { kind: 'typed'; text: string }
+type PasteSegment = { kind: 'paste'; text: string; label: string }
+type Segment = TypedSegment | PasteSegment
+
+function segmentDisplayWidth(seg: Segment): number {
+  if (seg.kind === 'paste') return seg.label.length // ASCII label, all width-1
+  return [...seg.text].reduce((sum, ch) => sum + charDisplayWidth(ch), 0)
+}
+
 function readUserInput(prompt: string): Promise<string | null> {
   return new Promise(resolve => {
     process.stdout.write(prompt)
@@ -100,10 +112,15 @@ function readUserInput(prompt: string): Promise<string | null> {
     readline.emitKeypressEvents(process.stdin)
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
 
-    let input = ''
+    // Segments track what's displayed vs what's in the logical input.
+    // Last segment absorbs typed chars; paste events push a new PasteSegment.
+    const segments: Segment[] = [{ kind: 'typed', text: '' }]
     let ctrlCCount = 0
     let pasting = false
     let pasteBuffer = ''
+
+    // Logical input = concatenation of all segment texts
+    const fullInput = () => segments.map(s => s.text).join('')
 
     const finish = (value: string | null) => {
       process.stdin.removeListener('keypress', onKey)
@@ -115,31 +132,56 @@ function readUserInput(prompt: string): Promise<string | null> {
     const onKey = (_: unknown, key: { name: string; ctrl: boolean; sequence: string }) => {
       if (!key) return
 
-      // Bracketed paste start: \x1B[200~
+      // ── Bracketed paste start ──────────────────────────────────────────────
       if (key.sequence === '\x1B[200~') {
         pasting = true
         pasteBuffer = ''
         return
       }
-      // Bracketed paste end: \x1B[201~
+
+      // ── Bracketed paste end ────────────────────────────────────────────────
       if (key.sequence === '\x1B[201~') {
         pasting = false
-        // Strip newlines from pasted content (prevent accidental send)
         const cleaned = pasteBuffer.replace(/\r?\n/g, ' ').trim()
-        if (cleaned) {
-          input += cleaned
-          // Show [pasted text] label instead of raw content
-          process.stdout.write(chalk.gray('[pasted text]'))
-        }
         pasteBuffer = ''
+        if (!cleaned) return
+
+        // Label shown inline on the prompt line (cursor tracks this)
+        const label = `[pasted ${cleaned.length} chars]`
+        // Preview shown below so the user can verify what will be sent
+        const preview = cleaned.length > 120 ? cleaned.slice(0, 120) + '…' : cleaned
+
+        // Push a dedicated paste segment
+        segments.push({ kind: 'paste', text: cleaned, label })
+        // Always push a fresh typed segment after a paste so subsequent typing
+        // goes into a separate segment (easier backspace logic)
+        segments.push({ kind: 'typed', text: '' })
+
+        // Print the label inline, then the preview on a new line, then redraw
+        // the prompt so the cursor is back on the input line showing the label.
+        process.stdout.write(chalk.dim(label))
+        process.stdout.write(chalk.dim(`\n  ${preview}\n`))
+        process.stdout.write(prompt)
+        // Redraw everything before the just-added paste segment
+        for (let i = 0; i < segments.length - 2; i++) {
+          const s = segments[i]
+          if (s.kind === 'typed') {
+            process.stdout.write(s.text)
+          } else {
+            process.stdout.write(chalk.gray(s.label))
+          }
+        }
+        process.stdout.write(chalk.dim(label))
         return
       }
-      // Buffer paste content without echoing
+
+      // ── Buffer during paste ────────────────────────────────────────────────
       if (pasting) {
         pasteBuffer += key.sequence ?? ''
         return
       }
 
+      // ── Ctrl+C ────────────────────────────────────────────────────────────
       if (key.ctrl && key.name === 'c') {
         ctrlCCount++
         if (ctrlCCount >= 2) {
@@ -147,28 +189,76 @@ function readUserInput(prompt: string): Promise<string | null> {
           finish(null)
           return
         }
-        process.stdout.write(chalk.gray(`\n  (Ctrl+C again to exit)  ${kaomoji.upset()}\n`))
+        process.stdout.write(chalk.dim(`\n  (Ctrl+C again to exit)  ${kaomoji.upset()}\n`))
         process.stdout.write(prompt)
-        input = ''
+        // Reset to a single empty typed segment
+        segments.length = 0
+        segments.push({ kind: 'typed', text: '' })
         setTimeout(() => { ctrlCCount = 0 }, 2000)
         return
       }
 
       ctrlCCount = 0
 
+      // ── Enter ──────────────────────────────────────────────────────────────
       if (key.name === 'return') {
         process.stdout.write('\n')
-        finish(input)
-      } else if (key.name === 'backspace') {
-        const chars = [...input]
-        if (chars.length > 0) {
-          const lastChar = chars[chars.length - 1]
-          const w = charDisplayWidth(lastChar)
-          input = chars.slice(0, -1).join('')
-          process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+        finish(fullInput())
+        return
+      }
+
+      // ── Backspace ──────────────────────────────────────────────────────────
+      if (key.name === 'backspace') {
+        // Find the last non-empty segment
+        while (segments.length > 1) {
+          const last = segments[segments.length - 1]
+          if (last.kind === 'typed' && last.text.length === 0) {
+            // Empty trailing typed segment — check the one before it
+            const prev = segments[segments.length - 2]
+            if (prev.kind === 'paste') {
+              // Erase the whole paste label at once
+              const w = prev.label.length
+              segments.splice(segments.length - 2, 2) // remove paste + empty typed
+              process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+              return
+            } else {
+              // Two consecutive typed segments — merge by popping the empty one
+              segments.pop()
+              continue
+            }
+          }
+          break
         }
-      } else if (key.sequence && !key.ctrl && !key.name?.startsWith('f') && key.sequence >= ' ') {
-        input += key.sequence
+
+        const last = segments[segments.length - 1]
+        if (last.kind === 'paste') {
+          // Shouldn't normally happen (we always add typed after paste),
+          // but handle defensively: erase the whole label
+          const w = last.label.length
+          segments.pop()
+          process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+        } else {
+          // Typed segment: remove last code point
+          const chars = [...last.text]
+          if (chars.length > 0) {
+            const lastChar = chars[chars.length - 1]
+            const w = charDisplayWidth(lastChar)
+            last.text = chars.slice(0, -1).join('')
+            process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+          }
+        }
+        return
+      }
+
+      // ── Regular character ──────────────────────────────────────────────────
+      if (key.sequence && !key.ctrl && !key.name?.startsWith('f') && key.sequence >= ' ') {
+        const last = segments[segments.length - 1]
+        if (last.kind === 'typed') {
+          last.text += key.sequence
+        } else {
+          // After a paste segment that somehow has no trailing typed seg
+          segments.push({ kind: 'typed', text: key.sequence })
+        }
         process.stdout.write(key.sequence)
       }
     }
@@ -204,7 +294,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
     spinner.start('loading memory...')
     memoryContext = await buildMemoryContext(client, config, '')
     spinner.stop()
-    if (memoryContext) process.stdout.write(chalk.gray('  ◆ memory  context loaded\n'))
+    if (memoryContext) process.stdout.write(chalk.dim('  ◆ memory  context loaded\n'))
   } catch {
     spinner.stop()
   }
@@ -295,7 +385,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
           (text) => {
             if (!thinkingStarted) { clearTimeout(thinkingTimer!); thinkingTimer = null }
             else { clearThinking(); thinkingStarted = false }
-            process.stdout.write(chalk.white(text))
+            process.stdout.write(text) // use terminal's native foreground color
             responseText += text
           },
           (_name, _input) => {

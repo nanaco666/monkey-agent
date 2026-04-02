@@ -33,7 +33,7 @@ export class Spinner {
   }
 
   private render(): void {
-    process.stdout.write(`\r  ${chalk.gray(FRAMES[this.frame])} ${chalk.gray(this.msg)}`)
+    process.stdout.write(`\r  ${chalk.dim(FRAMES[this.frame])} ${chalk.dim(this.msg)}`)
   }
 }
 
