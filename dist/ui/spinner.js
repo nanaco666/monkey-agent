@@ -22,8 +22,8 @@ export class Spinner {
         if (this.timer) {
             clearInterval(this.timer);
             this.timer = null;
+            process.stdout.write('\r\x1B[2K'); // clear spinner line only if spinner was running
         }
-        process.stdout.write('\r\x1B[2K'); // clear line
         process.stdout.write('\x1B[?25h'); // show cursor
     }
     render() {

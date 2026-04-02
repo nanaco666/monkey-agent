@@ -169,11 +169,84 @@ Line-by-line clearing causes flicker and residual artifacts.
 ## REPL prompt
 
 ```
-❯ ▌
+❯ ▌          ← tame mode (default)
+🐒 ❯ ▌       ← wild mode
 ```
 
 - Orange bold `❯` with space
 - No label, no indent — full width for input
+
+## Permission system: tame / wild mode
+
+Two global modes toggled by slash commands — no per-operation confirmation dialogs.
+
+| Mode | Prompt | Behavior |
+|------|--------|----------|
+| tame (default) | `❯ ` | Dangerous commands blocked: `rm`, `rmdir`, force push, etc. AI is told the command was denied. |
+| wild | `🐒 ❯ ` | All commands pass through. |
+
+**Slash commands:** `/wild` to unlock, `/tame` to re-lock. Status shown in prompt.
+
+**Dangerous command detection (tame mode):**
+- `rm` / `rmdir` (any form)
+- `git push --force` / `git push -f`
+- `chmod` on system paths
+- `kill` / `pkill`
+- Pipe to `sh` / `bash` (e.g. `curl ... | bash`)
+
+On block: return `Error: command blocked in tame mode. Switch to wild mode with /wild to allow.` — AI sees this and tells the user.
+
+## REPL input: wide character backspace
+
+Raw stdin backspace handler must account for wide characters (CJK, emoji = 2 columns).
+
+```ts
+function charWidth(ch: string): number {
+  const cp = ch.codePointAt(0) ?? 0
+  // CJK unified, fullwidth, emoji ranges
+  if (cp >= 0x1100 && ...) return 2
+  return 1
+}
+
+// on backspace:
+const ch = [...input].at(-1) ?? ''
+const w = charWidth(ch)
+input = input.slice(0, -ch.length) // remove by code point
+process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+```
+
+Never use `\x1B[1D` blindly — use the actual display width.
+
+## REPL input: bracketed paste mode
+
+Without bracketed paste, pasted text arrives as rapid keypress events. If paste contains a newline, it triggers immediate send. Remaining text after the newline is lost.
+
+**Solution:** enable bracketed paste mode when entering raw input.
+
+```
+\x1B[?2004h   ← enable on stdin entry
+\x1B[?2004l   ← disable on stdin exit
+```
+
+Terminal wraps paste content with:
+```
+\x1B[200~   ← paste start
+...content...
+\x1B[201~   ← paste end
+```
+
+**Behavior when paste detected:**
+1. Buffer all content between `\x1B[200~` and `\x1B[201~`
+2. Do NOT echo characters individually during paste
+3. On paste end: append buffer to input, display `[pasted text]` inline (gray)
+4. User can then review and press Enter to send
+
+Display format:
+```
+❯ [pasted text]▌
+```
+
+The actual pasted content is in `input` (sent to AI), but terminal only shows the label.
 
 ## Banner
 
