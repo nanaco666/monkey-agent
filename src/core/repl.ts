@@ -10,7 +10,7 @@ import { kaomoji } from '../ui/kaomoji.js'
 import { buildMemoryContext } from '../memory/context.js'
 import { appendSession } from '../memory/store.js'
 import { shouldCompact, compactMessages } from './compact.js'
-import { findCommand } from '../commands/index.js'
+import { findCommand, ALL_PICKER_ENTRIES, type PickerEntry } from '../commands/index.js'
 
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ')
 
@@ -109,138 +109,206 @@ function segmentDisplayWidth(seg: Segment): number {
 function readUserInput(prompt: string): Promise<string | null> {
   return new Promise(resolve => {
     process.stdout.write(prompt)
-    // Enable bracketed paste mode
-    process.stdout.write('\x1B[?2004h')
+    process.stdout.write('\x1B[?2004h') // enable bracketed paste
     readline.emitKeypressEvents(process.stdin)
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
 
-    // Segments track what's displayed vs what's in the logical input.
-    // Last segment absorbs typed chars; paste events push a new PasteSegment.
     const segments: Segment[] = [{ kind: 'typed', text: '' }]
     let ctrlCCount = 0
     let pasting = false
     let pasteBuffer = ''
 
-    // Logical input = concatenation of all segment texts
+    // Picker state
+    let pickerMode = false
+    let pickerFilter = ''
+    let pickerCursor = 0
+    let pickerRendered = false
+    let placeholder = '' // dim args hint after command selection
+
     const fullInput = () => segments.map(s => s.text).join('')
 
     const finish = (value: string | null) => {
       process.stdin.removeListener('keypress', onKey)
       if (process.stdin.isTTY) process.stdin.setRawMode(false)
-      process.stdout.write('\x1B[?2004l') // disable bracketed paste
+      process.stdout.write('\x1B[?2004l')
       resolve(value)
     }
 
+    // ── Picker helpers ─────────────────────────────────────────────────────
+    const getFiltered = (): PickerEntry[] => {
+      if (!pickerFilter) return ALL_PICKER_ENTRIES
+      return ALL_PICKER_ENTRIES.filter(e => e.cmd.slice(1).startsWith(pickerFilter))
+    }
+
+    const renderPicker = () => {
+      const filtered = getFiltered()
+      const listLines = filtered.length || 1
+      if (pickerRendered) {
+        // Move up: 1 input line + listLines
+        process.stdout.write(`\x1B[${1 + listLines}A\x1B[0J`)
+      }
+      pickerRendered = true
+      // Input line
+      process.stdout.write(prompt + '/' + pickerFilter + '\n')
+      // Command list
+      if (filtered.length === 0) {
+        process.stdout.write(chalk.dim('  no matching commands\n'))
+      } else {
+        pickerCursor = Math.min(pickerCursor, filtered.length - 1)
+        pickerCursor = Math.max(0, pickerCursor)
+        filtered.forEach((entry, i) => {
+          const cmdPad = entry.cmd.padEnd(10)
+          if (i === pickerCursor) {
+            process.stdout.write(
+              chalk.bold.rgb(232, 98, 42)(`  ❯ ${cmdPad}`) +
+              '  ' + entry.description + '\n'
+            )
+          } else {
+            process.stdout.write(chalk.dim(`    ${cmdPad}  ${entry.description}\n`))
+          }
+        })
+      }
+    }
+
+    const closePicker = (clearLine = true) => {
+      if (pickerRendered) {
+        const filtered = getFiltered()
+        const listLines = filtered.length || 1
+        process.stdout.write(`\x1B[${1 + listLines}A\x1B[0J`)
+        pickerRendered = false
+      }
+      pickerMode = false
+      pickerFilter = ''
+      pickerCursor = 0
+      if (clearLine) process.stdout.write('\r\x1B[2K')
+    }
+
+    const selectPickerEntry = (entry: PickerEntry) => {
+      closePicker(false)
+      process.stdout.write('\r\x1B[2K')
+      if (!entry.argsPlaceholder) {
+        // No args: submit immediately
+        process.stdout.write(prompt + entry.cmd + '\n')
+        finish(entry.cmd)
+      } else {
+        // Fill input with command, show dim placeholder
+        const typed = entry.cmd + ' '
+        segments[0] = { kind: 'typed', text: typed }
+        placeholder = entry.argsPlaceholder
+        process.stdout.write(prompt + typed + chalk.dim(placeholder))
+        // Move cursor back before placeholder
+        process.stdout.write(`\x1B[${placeholder.length}D`)
+      }
+    }
+
+    // ── Key handler ────────────────────────────────────────────────────────
     const onKey = (_: unknown, key: { name: string; ctrl: boolean; sequence: string }) => {
       if (!key) return
 
-      // ── Bracketed paste start ──────────────────────────────────────────────
-      if (key.sequence === '\x1B[200~') {
-        pasting = true
-        pasteBuffer = ''
-        return
-      }
-
-      // ── Bracketed paste end ────────────────────────────────────────────────
+      // Bracketed paste
+      if (key.sequence === '\x1B[200~') { pasting = true; pasteBuffer = ''; return }
       if (key.sequence === '\x1B[201~') {
         pasting = false
         const cleaned = pasteBuffer.replace(/\r?\n/g, ' ').trim()
         pasteBuffer = ''
         if (!cleaned) return
-
-        // Label shown inline on the prompt line (cursor tracks this)
         const label = `[pasted ${cleaned.length} chars]`
-        // Preview shown below so the user can verify what will be sent
         const preview = cleaned.length > 120 ? cleaned.slice(0, 120) + '…' : cleaned
-
-        // Push a dedicated paste segment
         segments.push({ kind: 'paste', text: cleaned, label })
-        // Always push a fresh typed segment after a paste so subsequent typing
-        // goes into a separate segment (easier backspace logic)
         segments.push({ kind: 'typed', text: '' })
-
-        // Print the label inline, then the preview on a new line, then redraw
-        // the prompt so the cursor is back on the input line showing the label.
         process.stdout.write(chalk.dim(label))
         process.stdout.write(chalk.dim(`\n  ${preview}\n`))
         process.stdout.write(prompt)
-        // Redraw everything before the just-added paste segment
         for (let i = 0; i < segments.length - 2; i++) {
           const s = segments[i]
-          if (s.kind === 'typed') {
-            process.stdout.write(s.text)
-          } else {
-            process.stdout.write(chalk.gray(s.label))
-          }
+          process.stdout.write(s.kind === 'typed' ? s.text : chalk.dim(s.label))
         }
         process.stdout.write(chalk.dim(label))
         return
       }
+      if (pasting) { pasteBuffer += key.sequence ?? ''; return }
 
-      // ── Buffer during paste ────────────────────────────────────────────────
-      if (pasting) {
-        pasteBuffer += key.sequence ?? ''
+      // ── Picker mode keys ─────────────────────────────────────────────────
+      if (pickerMode) {
+        if (key.ctrl && key.name === 'c') { closePicker(); process.stdout.write(prompt); return }
+        if (key.name === 'escape') { closePicker(); process.stdout.write(prompt); return }
+        if (key.name === 'up') { pickerCursor--; renderPicker(); return }
+        if (key.name === 'down') { pickerCursor++; renderPicker(); return }
+        if (key.name === 'return') {
+          const filtered = getFiltered()
+          const entry = filtered[pickerCursor]
+          if (entry) selectPickerEntry(entry)
+          else { closePicker(); process.stdout.write(prompt) }
+          return
+        }
+        if (key.name === 'backspace') {
+          if (pickerFilter.length > 0) {
+            pickerFilter = pickerFilter.slice(0, -1)
+            pickerCursor = 0
+            renderPicker()
+          } else {
+            // Backspace with empty filter: exit picker, restore empty input
+            closePicker()
+            process.stdout.write(prompt)
+          }
+          return
+        }
+        if (key.sequence && !key.ctrl && key.sequence >= ' ') {
+          pickerFilter += key.sequence
+          pickerCursor = 0
+          renderPicker()
+        }
         return
       }
 
-      // ── Ctrl+C ────────────────────────────────────────────────────────────
+      // ── Normal mode keys ─────────────────────────────────────────────────
       if (key.ctrl && key.name === 'c') {
         ctrlCCount++
-        if (ctrlCCount >= 2) {
-          process.stdout.write('\n')
-          finish(null)
-          return
-        }
+        if (ctrlCCount >= 2) { process.stdout.write('\n'); finish(null); return }
         process.stdout.write(chalk.dim(`\n  (Ctrl+C again to exit)  ${kaomoji.upset()}\n`))
         process.stdout.write(prompt)
-        // Reset to a single empty typed segment
-        segments.length = 0
-        segments.push({ kind: 'typed', text: '' })
+        segments.length = 0; segments.push({ kind: 'typed', text: '' })
+        placeholder = ''
         setTimeout(() => { ctrlCCount = 0 }, 2000)
         return
       }
-
       ctrlCCount = 0
 
-      // ── Enter ──────────────────────────────────────────────────────────────
       if (key.name === 'return') {
+        // Clear placeholder from display before submitting
+        if (placeholder) {
+          process.stdout.write(`\x1B[${placeholder.length}C\x1B[${placeholder.length}P`)
+          placeholder = ''
+        }
         process.stdout.write('\n')
         finish(fullInput())
         return
       }
 
-      // ── Backspace ──────────────────────────────────────────────────────────
       if (key.name === 'backspace') {
-        // Find the last non-empty segment
+        // If placeholder is showing, erase it first visually
+        if (placeholder) {
+          process.stdout.write(`\x1B[${placeholder.length}C\x1B[${placeholder.length}P`)
+          placeholder = ''
+        }
         while (segments.length > 1) {
           const last = segments[segments.length - 1]
           if (last.kind === 'typed' && last.text.length === 0) {
-            // Empty trailing typed segment — check the one before it
             const prev = segments[segments.length - 2]
             if (prev.kind === 'paste') {
-              // Erase the whole paste label at once
               const w = prev.label.length
-              segments.splice(segments.length - 2, 2) // remove paste + empty typed
+              segments.splice(segments.length - 2, 2)
               process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
               return
-            } else {
-              // Two consecutive typed segments — merge by popping the empty one
-              segments.pop()
-              continue
-            }
+            } else { segments.pop(); continue }
           }
           break
         }
-
         const last = segments[segments.length - 1]
         if (last.kind === 'paste') {
-          // Shouldn't normally happen (we always add typed after paste),
-          // but handle defensively: erase the whole label
-          const w = last.label.length
-          segments.pop()
+          const w = last.label.length; segments.pop()
           process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
         } else {
-          // Typed segment: remove last code point
           const chars = [...last.text]
           if (chars.length > 0) {
             const lastChar = chars[chars.length - 1]
@@ -252,13 +320,25 @@ function readUserInput(prompt: string): Promise<string | null> {
         return
       }
 
-      // ── Regular character ──────────────────────────────────────────────────
       if (key.sequence && !key.ctrl && !key.name?.startsWith('f') && key.sequence >= ' ') {
+        // Entering picker when '/' is first character
+        if (key.sequence === '/' && fullInput() === '') {
+          pickerMode = true
+          pickerFilter = ''
+          pickerCursor = 0
+          pickerRendered = false
+          renderPicker()
+          return
+        }
+        // Clear placeholder on first keystroke
+        if (placeholder) {
+          process.stdout.write(`\x1B[${placeholder.length}C\x1B[${placeholder.length}P`)
+          placeholder = ''
+        }
         const last = segments[segments.length - 1]
         if (last.kind === 'typed') {
           last.text += key.sequence
         } else {
-          // After a paste segment that somehow has no trailing typed seg
           segments.push({ kind: 'typed', text: key.sequence })
         }
         process.stdout.write(key.sequence)

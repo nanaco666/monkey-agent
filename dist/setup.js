@@ -11,8 +11,8 @@ const PROVIDERS = [
         base_url: undefined,
         key_url: 'https://console.anthropic.com/',
         models: [
-            { id: 'claude-opus-4-5', label: 'claude-opus-4-5        — most capable' },
-            { id: 'claude-sonnet-4-5', label: 'claude-sonnet-4-5      — balanced' },
+            { id: 'claude-opus-4-6', label: 'claude-opus-4-6        — most capable' },
+            { id: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6      — balanced' },
             { id: 'claude-haiku-4-5-20251001', label: 'claude-haiku-4-5       — fastest, cheapest' },
         ],
     },
@@ -91,12 +91,12 @@ export async function runSetup() {
     // ── Models
     divider('Model');
     let modelList = provider.models;
-    if (modelList.length === 0 && base_url) {
+    if (base_url) {
         const ids = await fetchModels(base_url, api_key);
         if (ids.length > 0) {
             modelList = ids.map(id => ({ id, label: id }));
         }
-        else {
+        else if (modelList.length === 0) {
             hint('Could not fetch models — enter manually.\n');
         }
     }
