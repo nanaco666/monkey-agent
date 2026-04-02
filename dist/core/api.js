@@ -21,7 +21,7 @@ You have persistent memory across sessions via the memory_write tool.
 - Save memories proactively when you learn something worth remembering.
 - Keep memory entries concise and factual.
 - Do NOT use bash to search for memory files. The memory path is given in the dynamic context below.`;
-export async function streamResponse(client, config, messages, onText, onToolUse, memoryContext = '') {
+export async function streamResponse(client, config, messages, onText, onToolUse, memoryContext = '', allowedTools) {
     const toolUses = [];
     // Fixed part: cached. Dynamic part (cwd + memory): not cached.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -40,7 +40,9 @@ export async function streamResponse(client, config, messages, onText, onToolUse
         model: config.model,
         max_tokens: 8096,
         system: systemBlocks,
-        tools: toolDefs,
+        tools: (allowedTools
+            ? toolDefs.filter(t => allowedTools.includes(t.name))
+            : toolDefs),
         messages,
     });
     let currentToolId = '';

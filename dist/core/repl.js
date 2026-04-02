@@ -7,6 +7,7 @@ import { kaomoji } from '../ui/kaomoji.js';
 import { buildMemoryContext } from '../memory/context.js';
 import { appendSession } from '../memory/store.js';
 import { shouldCompact, compactMessages } from './compact.js';
+import { findCommand } from '../commands/index.js';
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ');
 const SLOW_TOOL_MS = 300; // show spinner only if tool takes longer than this
 const TOOL_MESSAGES = {
@@ -284,6 +285,10 @@ export async function startRepl(client, config) {
         if (cmd === '/help') {
             console.log(chalk.rgb(245, 242, 235)([
                 '',
+                '  /commit  generate and create a git commit',
+                '  /plan    read-only planning mode',
+                '  /memory  view and manage memory',
+                '',
                 '  /clear   clear conversation history',
                 '  /model   show current model',
                 '  /wild    unlock dangerous commands 🐒',
@@ -316,6 +321,81 @@ export async function startRepl(client, config) {
         if (trimmed.startsWith('/')) {
             if (handleSlash(trimmed))
                 continue;
+            // Slash commands like /commit, /plan, /memory
+            const [cmdName, ...cmdArgParts] = trimmed.slice(1).split(' ');
+            const slashCmd = findCommand(cmdName);
+            if (slashCmd) {
+                const cmdArgs = cmdArgParts.join(' ');
+                const prompt = slashCmd.buildPrompt(cmdArgs);
+                // Run as a fresh one-shot exchange with restricted tools, without polluting main messages
+                const cmdMessages = [{ role: 'user', content: prompt }];
+                console.log();
+                let cmdText = '';
+                let cmdThinkingTimer = null;
+                let cmdThinkingStarted = false;
+                const clearCmdThinking = () => {
+                    if (cmdThinkingTimer) {
+                        clearTimeout(cmdThinkingTimer);
+                        cmdThinkingTimer = null;
+                    }
+                    spinner.stop();
+                };
+                try {
+                    while (true) {
+                        cmdText = '';
+                        cmdThinkingStarted = false;
+                        cmdThinkingTimer = setTimeout(() => { cmdThinkingStarted = true; spinner.start('thinking...'); }, SLOW_TOOL_MS);
+                        const { toolUses } = await streamResponse(client, config, cmdMessages, (text) => {
+                            if (!cmdThinkingStarted) {
+                                clearTimeout(cmdThinkingTimer);
+                                cmdThinkingTimer = null;
+                            }
+                            else {
+                                clearCmdThinking();
+                                cmdThinkingStarted = false;
+                            }
+                            process.stdout.write(text);
+                            cmdText += text;
+                        }, () => { clearCmdThinking(); cmdThinkingStarted = false; }, memoryContext, slashCmd.allowedTools);
+                        clearCmdThinking();
+                        if (cmdText)
+                            process.stdout.write('\n');
+                        const assistantBlocks = [];
+                        if (cmdText)
+                            assistantBlocks.push({ type: 'text', text: cmdText });
+                        for (const t of toolUses)
+                            assistantBlocks.push({ type: 'tool_use', id: t.id, name: t.name, input: t.input });
+                        if (assistantBlocks.length > 0)
+                            cmdMessages.push({ role: 'assistant', content: assistantBlocks });
+                        if (toolUses.length === 0)
+                            break;
+                        const toolResults = [];
+                        for (const t of toolUses) {
+                            printToolCall(t.name, t.input);
+                            let slowTimer = null;
+                            let spinnerShown = false;
+                            slowTimer = setTimeout(() => { spinnerShown = true; spinner.start(TOOL_MESSAGES[t.name] ?? 'working...'); }, SLOW_TOOL_MS);
+                            const start = Date.now();
+                            const result = await executeTool(t.name, t.input);
+                            const elapsed = Date.now() - start;
+                            if (slowTimer)
+                                clearTimeout(slowTimer);
+                            if (spinnerShown)
+                                spinner.stop();
+                            printToolResult(t.name, result, elapsed);
+                            toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: result });
+                        }
+                        cmdMessages.push({ role: 'user', content: toolResults });
+                        console.log();
+                    }
+                }
+                catch (err) {
+                    clearCmdThinking();
+                    console.log(chalk.red(`\n  ✗ ${err.message || String(err)}`));
+                }
+                process.stdout.write('\n');
+                continue;
+            }
         }
         messages.push({ role: 'user', content: trimmed });
         appendSession({ ts: new Date().toISOString(), role: 'user', content: trimmed });

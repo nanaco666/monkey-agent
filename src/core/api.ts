@@ -33,6 +33,7 @@ export async function streamResponse(
   onText: (text: string) => void,
   onToolUse: (name: string, input: Record<string, unknown>) => void,
   memoryContext = '',
+  allowedTools?: string[], // if set, only these tool names are available
 ): Promise<{ toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>; inputTokens: number }> {
   const toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
 
@@ -54,7 +55,9 @@ export async function streamResponse(
     model: config.model,
     max_tokens: 8096,
     system: systemBlocks,
-    tools: toolDefs as Anthropic.Tool[],
+    tools: (allowedTools
+      ? toolDefs.filter(t => allowedTools.includes(t.name))
+      : toolDefs) as Anthropic.Tool[],
     messages,
   })
 
