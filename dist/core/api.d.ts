@@ -7,5 +7,6 @@ export declare function streamResponse(client: Anthropic, config: Config, messag
         name: string;
         input: Record<string, unknown>;
     }>;
+    inputTokens: number;
 }>;
 export declare function makeClient(config: Config): Anthropic;

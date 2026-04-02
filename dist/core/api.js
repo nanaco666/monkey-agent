@@ -81,7 +81,8 @@ export async function streamResponse(client, config, messages, onText, onToolUse
             }
         }
     }
-    return { toolUses };
+    const finalMsg = await stream.finalMessage();
+    return { toolUses, inputTokens: finalMsg.usage.input_tokens };
 }
 export function makeClient(config) {
     return new Anthropic({

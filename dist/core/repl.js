@@ -6,6 +6,7 @@ import { spinner } from '../ui/spinner.js';
 import { kaomoji } from '../ui/kaomoji.js';
 import { buildMemoryContext } from '../memory/context.js';
 import { appendSession } from '../memory/store.js';
+import { shouldCompact, compactMessages } from './compact.js';
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ');
 const SLOW_TOOL_MS = 300; // show spinner only if tool takes longer than this
 const TOOL_MESSAGES = {
@@ -321,6 +322,7 @@ export async function startRepl(client, config) {
         console.log();
         let responseText = '';
         let thinkingTimer = null;
+        let lastInputTokens = 0;
         const clearThinking = () => {
             if (thinkingTimer) {
                 clearTimeout(thinkingTimer);
@@ -336,7 +338,7 @@ export async function startRepl(client, config) {
                     thinkingStarted = true;
                     spinner.start('thinking...');
                 }, SLOW_TOOL_MS);
-                const { toolUses } = await streamResponse(client, config, messages, (text) => {
+                const { toolUses, inputTokens: tokens } = await streamResponse(client, config, messages, (text) => {
                     if (!thinkingStarted) {
                         clearTimeout(thinkingTimer);
                         thinkingTimer = null;
@@ -398,8 +400,24 @@ export async function startRepl(client, config) {
                     printToolResult(t.name, result, elapsed);
                     toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: result });
                 }
+                lastInputTokens = tokens;
                 messages.push({ role: 'user', content: toolResults });
                 console.log();
+            }
+            // Auto-compact when context gets too long
+            if (shouldCompact(lastInputTokens)) {
+                try {
+                    spinner.start('compacting context...');
+                    const compacted = await compactMessages(client, config, messages);
+                    spinner.stop();
+                    const removed = messages.length - compacted.length;
+                    messages.length = 0;
+                    messages.push(...compacted);
+                    process.stdout.write(chalk.dim(`  ◆ context compacted  (−${removed} messages)\n\n`));
+                }
+                catch {
+                    spinner.stop();
+                }
             }
         }
         catch (err) {
