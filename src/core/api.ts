@@ -1,9 +1,42 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { homedir } from 'os'
 import { join } from 'path'
+import { readFileSync, existsSync } from 'fs'
+import { execSync } from 'child_process'
 import type { Config } from '../config/index.js'
 import { toolDefs } from '../tools/index.js'
 import { getProjectSlug } from '../memory/slug.js'
+
+function loadClaudeMd(): string {
+  const candidates: string[] = []
+
+  // 1. Current working directory
+  candidates.push(join(process.cwd(), 'CLAUDE.md'))
+
+  // 2. Git root (if different from cwd)
+  try {
+    const gitRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+    if (gitRoot && gitRoot !== process.cwd()) {
+      candidates.push(join(gitRoot, 'CLAUDE.md'))
+    }
+  } catch { /* not a git repo */ }
+
+  // 3. Global ~/.claude/CLAUDE.md
+  candidates.push(join(homedir(), '.claude', 'CLAUDE.md'))
+
+  const sections: string[] = []
+  const seen = new Set<string>()
+  for (const p of candidates) {
+    if (seen.has(p) || !existsSync(p)) continue
+    seen.add(p)
+    try {
+      const content = readFileSync(p, 'utf8').trim()
+      if (content) sections.push(`### ${p}\n${content}`)
+    } catch { /* skip */ }
+  }
+
+  return sections.length > 0 ? '\n\n## Project instructions (CLAUDE.md)\n' + sections.join('\n\n') : ''
+}
 
 export type Message = Anthropic.MessageParam
 
@@ -47,7 +80,7 @@ export async function streamResponse(
     },
     {
       type: 'text',
-      text: `## Working directory\nCurrent directory: ${process.cwd()}\n\n## Memory path\n${join(homedir(), '.monkey-cli', 'memory', getProjectSlug())}${memoryContext}`,
+      text: `## Working directory\nCurrent directory: ${process.cwd()}\n\n## Memory path\n${join(homedir(), '.monkey-cli', 'memory', getProjectSlug())}${memoryContext}${loadClaudeMd()}`,
     },
   ]
 
