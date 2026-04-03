@@ -1,8 +1,39 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { homedir } from 'os';
 import { join } from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { execSync } from 'child_process';
 import { toolDefs } from '../tools/index.js';
 import { getProjectSlug } from '../memory/slug.js';
+function loadClaudeMd() {
+    const candidates = [];
+    // 1. Current working directory
+    candidates.push(join(process.cwd(), 'CLAUDE.md'));
+    // 2. Git root (if different from cwd)
+    try {
+        const gitRoot = execSync('git rev-parse --show-toplevel', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+        if (gitRoot && gitRoot !== process.cwd()) {
+            candidates.push(join(gitRoot, 'CLAUDE.md'));
+        }
+    }
+    catch { /* not a git repo */ }
+    // 3. Global ~/.claude/CLAUDE.md
+    candidates.push(join(homedir(), '.claude', 'CLAUDE.md'));
+    const sections = [];
+    const seen = new Set();
+    for (const p of candidates) {
+        if (seen.has(p) || !existsSync(p))
+            continue;
+        seen.add(p);
+        try {
+            const content = readFileSync(p, 'utf8').trim();
+            if (content)
+                sections.push(`### ${p}\n${content}`);
+        }
+        catch { /* skip */ }
+    }
+    return sections.length > 0 ? '\n\n## Project instructions (CLAUDE.md)\n' + sections.join('\n\n') : '';
+}
 const SYSTEM_PROMPT_BASE = `You are Monkey, an AI coding assistant running in the terminal.
 You help users with software engineering tasks: reading and writing code, running commands, searching files, debugging, and more.
 
@@ -33,7 +64,7 @@ export async function streamResponse(client, config, messages, onText, onToolUse
         },
         {
             type: 'text',
-            text: `## Working directory\nCurrent directory: ${process.cwd()}\n\n## Memory path\n${join(homedir(), '.monkey-cli', 'memory', getProjectSlug())}${memoryContext}`,
+            text: `## Working directory\nCurrent directory: ${process.cwd()}\n\n## Memory path\n${join(homedir(), '.monkey-cli', 'memory', getProjectSlug())}${memoryContext}${loadClaudeMd()}`,
         },
     ];
     const stream = await client.messages.stream({
