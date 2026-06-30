@@ -45,6 +45,7 @@ export class TelegramBot {
   private sessions: Map<number, TgSession> = new Map()
   private offset = 0
   private running = false
+  private wildMode = false
 
   constructor(config: Config, token: string, allowedUsers: number[] = []) {
     this.config = config
@@ -166,23 +167,57 @@ export class TelegramBot {
 
     // Commands
     if (text === '/start') {
-      await this.sendMessage(chatId, '🐒 小猴 ready. Send me anything.')
+      await this.sendMessage(chatId, '🐒 小猴 ready. 发消息就行，我对世界充满好奇！')
       return
     }
     if (text === '/clear') {
       const session = this.getSession(chatId)
       session.messages.length = 0
-      await this.sendMessage(chatId, '✦ Conversation cleared.')
+      await this.sendMessage(chatId, '✦ 对话已清空。')
       return
     }
     if (text === '/model') {
-      await this.sendMessage(chatId, `Current model: ${this.config.model}`)
+      await this.sendMessage(chatId, `当前模型: ${this.config.model}`)
       return
     }
     if (text.startsWith('/model ')) {
       const newModel = text.slice(7).trim()
       this.config.model = newModel
-      await this.sendMessage(chatId, `✦ Switched to ${newModel}`)
+      await this.sendMessage(chatId, `✦ 已切换到 ${newModel}`)
+      return
+    }
+    if (text === '/usage') {
+      const session = this.getSession(chatId)
+      // Rough estimate from message count
+      const msgCount = session.messages.length
+      await this.sendMessage(chatId, `对话消息数: ${msgCount}\n当前模型: ${this.config.model}`)
+      return
+    }
+    if (text === '/wild') {
+      this.wildMode = true
+      await this.sendMessage(chatId, '🐒 wild mode — 所有命令都允许')
+      return
+    }
+    if (text === '/tame') {
+      this.wildMode = false
+      await this.sendMessage(chatId, '✦ tame mode — 危险命令已屏蔽')
+      return
+    }
+    if (text === '/help') {
+      await this.sendMessage(chatId, [
+        '🐒 小猴 Commands:',
+        '',
+        '/start - 打招呼',
+        '/clear - 清空对话',
+        '/model - 查看当前模型',
+        '/model <name> - 切换模型',
+        '/usage - 查看用量',
+        '/wild - 解锁危险命令 🐒',
+        '/tame - 恢复安全模式',
+        '/help - 查看帮助',
+        '',
+        '直接发消息就是聊天，发图片会自动 OCR 识别文字。',
+      ].join('\n'))
       return
     }
 
