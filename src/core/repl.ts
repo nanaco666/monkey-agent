@@ -54,6 +54,8 @@ const TOOL_MESSAGES: Record<string, string> = {
   grep:  'searching...',
   reminders: 'checking reminders...',
   notes: 'checking notes...',
+  web_fetch: 'fetching...',
+  web_search: 'searching the web...',
 }
 
 const WRITE_TOOLS = new Set(['write', 'edit'])

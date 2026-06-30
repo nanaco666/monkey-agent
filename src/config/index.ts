@@ -12,6 +12,8 @@ export interface Config {
   model: string
   fast_model: string
   providers?: Record<string, ProviderConfig>
+  telegram_bot_token?: string
+  telegram_allowed_users?: number[]
 }
 
 const DEFAULTS: Omit<Config, 'api_key'> = {

@@ -7,6 +7,7 @@ import { grepToolDef, runGrep } from './grep.js'
 import { memoryWriteDef, executeMemoryWrite } from './memory.js'
 import { remindersToolDef, runReminders } from './reminders.js'
 import { notesToolDef, runNotes } from './notes.js'
+import { webFetchDef, webSearchDef, executeWebFetch, executeWebSearch } from './web.js'
 
 export const toolDefs = [
   bashToolDef,
@@ -18,6 +19,8 @@ export const toolDefs = [
   memoryWriteDef,
   remindersToolDef,
   notesToolDef,
+  webFetchDef,
+  webSearchDef,
 ]
 
 export async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
@@ -40,6 +43,10 @@ export async function executeTool(name: string, input: Record<string, unknown>):
       return runReminders(input)
     case 'notes':
       return runNotes(input)
+    case 'web_fetch':
+      return executeWebFetch(input)
+    case 'web_search':
+      return executeWebSearch(input)
     default:
       return `Error: unknown tool "${name}"`
   }

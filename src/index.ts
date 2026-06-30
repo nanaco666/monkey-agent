@@ -46,5 +46,23 @@ if (!config) {
 
 initProviders(config)
 
+// Telegram bot mode: monkey telegram
+if (args[0] === 'telegram' || args[0] === 'tg') {
+  const { TelegramBot } = await import('./core/telegram.js')
+  const token = config.telegram_bot_token || process.env.TELEGRAM_BOT_TOKEN || ''
+  if (!token) {
+    console.error('Error: No Telegram bot token configured.')
+    console.error('Set it via: monkey config set telegram_bot_token YOUR_TOKEN')
+    console.error('Or set TELEGRAM_BOT_TOKEN env var.')
+    process.exit(1)
+  }
+  const allowedUsers = config.telegram_allowed_users || []
+  const bot = new TelegramBot(config, token, allowedUsers)
+  process.on('SIGINT', () => { bot.stop(); process.exit(0) })
+  process.on('SIGTERM', () => { bot.stop(); process.exit(0) })
+  await bot.start()
+  process.exit(0)
+}
+
 printBanner(config.model)
 await startRepl(config)
