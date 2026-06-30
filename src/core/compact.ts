@@ -1,6 +1,6 @@
-import Anthropic from '@anthropic-ai/sdk'
 import type { Config } from '../config/index.js'
 import type { Message } from './api.js'
+import { simpleChat } from './api.js'
 
 // Trigger compaction when input tokens exceed this threshold.
 // Claude models support 200K context; we compact well before to leave room for responses.
@@ -24,7 +24,6 @@ export function shouldCompact(inputTokens: number): boolean {
 }
 
 export async function compactMessages(
-  client: Anthropic,
   config: Config,
   messages: Message[],
 ): Promise<Message[]> {
@@ -40,17 +39,18 @@ export async function compactMessages(
   const toKeep = messages.slice(keepFrom)
 
   // Ask fast model to summarize the old messages
-  const response = await client.messages.create({
-    model: config.fast_model ?? config.model,
-    max_tokens: 2048,
-    system: SUMMARIZE_PROMPT,
-    messages: [
+  const model = config.fast_model ?? config.model
+  const response = await simpleChat(
+    config,
+    model,
+    SUMMARIZE_PROMPT,
+    [
       ...toSummarize,
       { role: 'user', content: 'Please summarize the conversation above.' },
     ],
-  })
+  )
 
-  const summary = response.content[0].type === 'text' ? response.content[0].text : ''
+  const summary = response.text
 
   // Replace old messages with a single exchange containing the summary
   const summaryMessages: Message[] = [

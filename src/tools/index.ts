@@ -5,6 +5,8 @@ import { editToolDef, runEdit } from './edit.js'
 import { globToolDef, runGlob } from './glob.js'
 import { grepToolDef, runGrep } from './grep.js'
 import { memoryWriteDef, executeMemoryWrite } from './memory.js'
+import { remindersToolDef, runReminders } from './reminders.js'
+import { notesToolDef, runNotes } from './notes.js'
 
 export const toolDefs = [
   bashToolDef,
@@ -14,6 +16,8 @@ export const toolDefs = [
   globToolDef,
   grepToolDef,
   memoryWriteDef,
+  remindersToolDef,
+  notesToolDef,
 ]
 
 export async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
@@ -32,6 +36,10 @@ export async function executeTool(name: string, input: Record<string, unknown>):
       return runGrep(input.pattern as string, input.path as string | undefined, input.glob as string | undefined, input.case_insensitive as boolean | undefined)
     case 'memory_write':
       return executeMemoryWrite(input)
+    case 'reminders':
+      return runReminders(input)
+    case 'notes':
+      return runNotes(input)
     default:
       return `Error: unknown tool "${name}"`
   }

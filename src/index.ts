@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { loadConfig, saveConfig } from './config/index.js'
 import { printBanner } from './banner.js'
-import { makeClient } from './core/api.js'
+import { initProviders } from './core/api.js'
 import { startRepl } from './core/repl.js'
 import { runSetup } from './setup.js'
 import { appendFileSync } from 'fs'
@@ -44,7 +44,7 @@ if (!config) {
   if (!config) process.exit(1)
 }
 
-const client = makeClient(config)
+initProviders(config)
 
 printBanner(config.model)
-await startRepl(client, config)
+await startRepl(config)

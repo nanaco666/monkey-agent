@@ -1,15 +1,17 @@
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
+import type { ProviderConfig } from '../providers/types.js'
 
 const CONFIG_DIR = join(homedir(), '.monkey-cli')
 const CONFIG_FILE = join(CONFIG_DIR, 'config.json')
 
 export interface Config {
   api_key: string
-  base_url?: string   // custom endpoint, e.g. OpenRouter, local proxy, AWS Bedrock
+  base_url?: string   // custom endpoint for anthropic
   model: string
   fast_model: string
+  providers?: Record<string, ProviderConfig>
 }
 
 const DEFAULTS: Omit<Config, 'api_key'> = {

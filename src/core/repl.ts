@@ -1,6 +1,5 @@
 import * as readline from 'readline'
 import chalk from 'chalk'
-import Anthropic from '@anthropic-ai/sdk'
 import type { Config } from '../config/index.js'
 import type { Message } from './api.js'
 import { streamResponse } from './api.js'
@@ -11,8 +10,38 @@ import { buildMemoryContext } from '../memory/context.js'
 import { appendSession } from '../memory/store.js'
 import { shouldCompact, compactMessages } from './compact.js'
 import { findCommand, ALL_PICKER_ENTRIES, type PickerEntry } from '../commands/index.js'
+import type { ContentBlock } from '../providers/index.js'
+import { detectProvider as detectProviderFn, getProviderForModel as getProviderFn } from '../providers/index.js'
 
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ')
+
+// Model aliases for quick switching
+const MODEL_ALIASES: Record<string, string> = {
+  // Anthropic
+  'opus':    'claude-opus-4-6',
+  'sonnet':  'claude-sonnet-4-6',
+  'haiku':   'claude-haiku-4-5-latest',
+  'opus4':   'claude-opus-4-6',
+  'sonnet4': 'claude-sonnet-4-6',
+  'haiku4':  'claude-haiku-4-5-latest',
+  // OpenAI
+  '4o':      'gpt-4o',
+  '4o-mini': 'gpt-4o-mini',
+  'o3':      'o3',
+  'o4-mini': 'o4-mini',
+  // 智谱
+  'glm':     'glm-4.5',
+  'glm4':    'glm-4.5',
+  'glm5':    'glm-5',
+}
+
+function resolveModel(input: string): string | null {
+  const lower = input.toLowerCase().trim()
+  if (MODEL_ALIASES[lower]) return MODEL_ALIASES[lower]
+  // Accept any model name directly (user knows what they're doing)
+  if (lower.includes('-') || lower.startsWith('gpt') || lower.startsWith('o1') || lower.startsWith('o3') || lower.startsWith('o4') || lower.startsWith('glm') || lower.startsWith('claude')) return lower
+  return null
+}
 
 const SLOW_TOOL_MS = 300 // show spinner only if tool takes longer than this
 
@@ -23,6 +52,8 @@ const TOOL_MESSAGES: Record<string, string> = {
   edit:  'scribbling...',
   glob:  'searching...',
   grep:  'searching...',
+  reminders: 'checking reminders...',
+  notes: 'checking notes...',
 }
 
 const WRITE_TOOLS = new Set(['write', 'edit'])
@@ -362,10 +393,28 @@ function isDangerous(command: string): boolean {
   return DANGEROUS_PATTERNS.some(p => p.test(command))
 }
 
-export async function startRepl(client: Anthropic, config: Config): Promise<void> {
+// Token usage tracking
+interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  requests: number
+}
+
+export async function startRepl(config: Config): Promise<void> {
   const messages: Message[] = []
   let memoryContext = ''
   let wildMode = false
+  const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, requests: 0 }
+
+  const trackUsage = (result: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number }) => {
+    usage.inputTokens += result.inputTokens
+    usage.outputTokens += result.outputTokens
+    usage.cacheReadTokens += result.cacheReadTokens
+    usage.cacheCreationTokens += result.cacheCreationTokens
+    usage.requests++
+  }
 
   const getPrompt = () => wildMode
     ? chalk.bold.rgb(232, 98, 42)('🐒 ❯ ')
@@ -374,7 +423,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
   // Load memory context once at startup
   try {
     spinner.start('loading memory...')
-    memoryContext = await buildMemoryContext(client, config, '')
+    memoryContext = await buildMemoryContext(config, '')
     spinner.stop()
     if (memoryContext) process.stdout.write(chalk.dim('  ◆ memory  context loaded\n'))
   } catch {
@@ -406,7 +455,8 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
         '  /memory  view and manage memory',
         '',
         '  /clear   clear conversation history',
-        '  /model   show current model',
+        '  /model   show or switch model (sonnet, opus, 4o, glm...)',
+        '  /usage   show token usage & cost',
         '  /wild    unlock dangerous commands 🐒',
         '  /tame    re-enable safety mode',
         '  /help    show this help',
@@ -417,8 +467,47 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
       ].join('\n')))
       return true
     }
-    if (cmd === '/model') {
-      console.log(chalk.rgb(245, 242, 235)(`\n  model: ${config.model}\n`))
+    if (cmd === '/model' || cmd.startsWith('/model ')) {
+      const arg = input.trim().slice('/model'.length).trim()
+      if (!arg) {
+        const providerKey = detectProviderFn(config.model)
+        console.log(chalk.rgb(245, 242, 235)(`\n  model: ${config.model}`) + chalk.dim(` (${providerKey})`) + '\n')
+        return true
+      }
+      const resolved = resolveModel(arg)
+      if (!resolved) {
+        console.log(chalk.red(`\n  unknown model: ${arg}`))
+        console.log(chalk.dim(`  try: sonnet, opus, haiku, 4o, glm, or a full model name\n`))
+        return true
+      }
+      const providerKey = detectProviderFn(resolved)
+      const provider = getProviderFn(resolved)
+      if (!provider) {
+        console.log(chalk.red(`\n  no provider configured for: ${resolved}`))
+        console.log(chalk.dim(`  add "${providerKey}" to ~/.monkey-cli/config.json providers\n`))
+        return true
+      }
+      config.model = resolved
+      console.log(chalk.rgb(100, 181, 246)(`\n  ✦ switched to ${resolved}`) + chalk.dim(` (${providerKey})`) + '\n')
+      return true
+    }
+    if (cmd === '/usage') {
+      const fmtK = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n)
+      const totalTokens = usage.inputTokens + usage.outputTokens
+      const costInput = usage.inputTokens * 3 / 1_000_000   // $3/M input
+      const costOutput = usage.outputTokens * 15 / 1_000_000 // $15/M output
+      const costCacheRead = usage.cacheReadTokens * 0.3 / 1_000_000 // $0.30/M cache read
+      const costCacheCreate = usage.cacheCreationTokens * 3.75 / 1_000_000 // $3.75/M cache write
+      const totalCost = costInput + costOutput + costCacheRead + costCacheCreate
+      console.log(chalk.rgb(245, 242, 235)([
+        '',
+        `  requests:       ${usage.requests}`,
+        `  input tokens:   ${fmtK(usage.inputTokens)}` + (usage.cacheReadTokens ? chalk.dim(` (cache hit: ${fmtK(usage.cacheReadTokens)})`) : ''),
+        `  output tokens:  ${fmtK(usage.outputTokens)}`,
+        `  total tokens:   ${fmtK(totalTokens)}`,
+        `  est. cost:      ${totalCost.toFixed(4)}`,
+        '',
+      ].join('\n')))
       return true
     }
     return false
@@ -462,8 +551,8 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
             cmdText = ''
             cmdThinkingStarted = false
             cmdThinkingTimer = setTimeout(() => { cmdThinkingStarted = true; spinner.start('thinking...') }, SLOW_TOOL_MS)
-            const { toolUses } = await streamResponse(
-              client, config, cmdMessages,
+            const cmdStreamResult = await streamResponse(
+              config, cmdMessages,
               (text) => {
                 if (!cmdThinkingStarted) { clearTimeout(cmdThinkingTimer!); cmdThinkingTimer = null }
                 else { clearCmdThinking(); cmdThinkingStarted = false }
@@ -474,6 +563,8 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
               memoryContext,
               slashCmd.allowedTools,
             )
+            const { toolUses } = cmdStreamResult
+            trackUsage(cmdStreamResult)
             clearCmdThinking()
             if (cmdText) process.stdout.write('\n')
             const assistantBlocks: unknown[] = []
@@ -481,7 +572,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
             for (const t of toolUses) assistantBlocks.push({ type: 'tool_use', id: t.id, name: t.name, input: t.input })
             if (assistantBlocks.length > 0) cmdMessages.push({ role: 'assistant', content: assistantBlocks as never })
             if (toolUses.length === 0) break
-            const toolResults: Anthropic.ToolResultBlockParam[] = []
+            const toolResults: ContentBlock[] = []
             for (const t of toolUses) {
               printToolCall(t.name, t.input)
               let slowTimer: ReturnType<typeof setTimeout> | null = null
@@ -530,8 +621,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
           spinner.start('thinking...')
         }, SLOW_TOOL_MS)
 
-        const { toolUses, inputTokens: tokens } = await streamResponse(
-          client,
+        const streamResult = await streamResponse(
           config,
           messages,
           (text) => {
@@ -546,6 +636,8 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
           },
           memoryContext,
         )
+        const { toolUses, inputTokens: tokens } = streamResult
+        trackUsage(streamResult)
 
         clearThinking()
         if (responseText) {
@@ -565,7 +657,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
 
         if (toolUses.length === 0) break
 
-        const toolResults: Anthropic.ToolResultBlockParam[] = []
+        const toolResults: ContentBlock[] = []
         for (const t of toolUses) {
           printToolCall(t.name, t.input)
 
@@ -607,7 +699,7 @@ export async function startRepl(client: Anthropic, config: Config): Promise<void
       if (shouldCompact(lastInputTokens)) {
         try {
           spinner.start('compacting context...')
-          const compacted = await compactMessages(client, config, messages)
+          const compacted = await compactMessages(config, messages)
           spinner.stop()
           const removed = messages.length - compacted.length
           messages.length = 0

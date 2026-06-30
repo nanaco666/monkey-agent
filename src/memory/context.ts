@@ -1,12 +1,11 @@
-import Anthropic from '@anthropic-ai/sdk'
 import type { Config } from '../config/index.js'
+import { simpleChat } from '../core/api.js'
 import { readMemoryIndex, listTopicFiles, type MemoryFile } from './store.js'
 
 const MAX_FILES = 5
 
 // Use fast model to pick relevant topic files for current conversation
 async function selectRelevantFiles(
-  client: Anthropic,
   config: Config,
   files: MemoryFile[],
   recentMessages: string,
@@ -15,22 +14,23 @@ async function selectRelevantFiles(
 
   const list = files.map((f, i) => `${i + 1}. [${f.type}] ${f.name} — ${f.description}`).join('\n')
 
-  const res = await client.messages.create({
-    model: config.fast_model,
-    max_tokens: 100,
-    messages: [{
+  const model = config.fast_model ?? config.model
+  const res = await simpleChat(
+    config,
+    model,
+    '',
+    [{
       role: 'user',
       content: `Given this conversation context:\n${recentMessages}\n\nWhich of these memory files are most relevant? Reply with comma-separated numbers only (max ${MAX_FILES}):\n${list}`,
     }],
-  })
+    100,
+  )
 
-  const text = res.content[0].type === 'text' ? res.content[0].text : ''
-  const indices = text.match(/\d+/g)?.map(n => parseInt(n) - 1).filter(i => i >= 0 && i < files.length) ?? []
+  const indices = res.text.match(/\d+/g)?.map(n => parseInt(n) - 1).filter(i => i >= 0 && i < files.length) ?? []
   return indices.length > 0 ? indices.map(i => files[i]) : files.slice(0, MAX_FILES)
 }
 
 export async function buildMemoryContext(
-  client: Anthropic,
   config: Config,
   recentMessages: string,
 ): Promise<string> {
@@ -40,7 +40,7 @@ export async function buildMemoryContext(
   if (!index && files.length === 0) return ''
 
   const selected = files.length > 0
-    ? await selectRelevantFiles(client, config, files, recentMessages)
+    ? await selectRelevantFiles(config, files, recentMessages)
     : []
 
   const parts: string[] = []

@@ -1,9 +1,10 @@
-import Anthropic from '@anthropic-ai/sdk'
 import { homedir } from 'os'
 import { join } from 'path'
 import { readFileSync, existsSync } from 'fs'
 import { execSync } from 'child_process'
 import type { Config } from '../config/index.js'
+import type { Provider, ChatMessage, StreamEvent, StreamResult, SystemBlock } from '../providers/index.js'
+import { getProviderForModel, detectProvider, registerProvider, createProvider } from '../providers/index.js'
 import { toolDefs } from '../tools/index.js'
 import { getProjectSlug } from '../memory/slug.js'
 
@@ -38,7 +39,7 @@ function loadClaudeMd(): string {
   return sections.length > 0 ? '\n\n## Project instructions (CLAUDE.md)\n' + sections.join('\n\n') : ''
 }
 
-export type Message = Anthropic.MessageParam
+export type Message = ChatMessage
 
 const SYSTEM_PROMPT_BASE = `You are Monkey, an AI coding assistant running in the terminal.
 You help users with software engineering tasks: reading and writing code, running commands, searching files, debugging, and more.
@@ -60,19 +61,19 @@ You have persistent memory across sessions via the memory_write tool.
 - Do NOT use bash to search for memory files. The memory path is given in the dynamic context below.`
 
 export async function streamResponse(
-  client: Anthropic,
   config: Config,
   messages: Message[],
   onText: (text: string) => void,
   onToolUse: (name: string, input: Record<string, unknown>) => void,
   memoryContext = '',
-  allowedTools?: string[], // if set, only these tool names are available
-): Promise<{ toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>; inputTokens: number }> {
+  allowedTools?: string[],
+): Promise<{ toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number }> {
+  const provider = getProviderForModel(config.model)
+  if (!provider) throw new Error(`No provider configured for model: ${config.model}`)
+
   const toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }> = []
 
-  // Fixed part: cached. Dynamic part (cwd + memory): not cached.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const systemBlocks: any[] = [
+  const system: SystemBlock[] = [
     {
       type: 'text',
       text: SYSTEM_PROMPT_BASE,
@@ -84,62 +85,94 @@ export async function streamResponse(
     },
   ]
 
-  const stream = await client.messages.stream({
+  const tools = allowedTools
+    ? toolDefs.filter(t => allowedTools.includes(t.name))
+    : toolDefs
+
+  const gen = provider.stream({
     model: config.model,
-    max_tokens: 8096,
-    system: systemBlocks,
-    tools: (allowedTools
-      ? toolDefs.filter(t => allowedTools.includes(t.name))
-      : toolDefs) as Anthropic.Tool[],
+    system,
     messages,
+    tools,
+    maxTokens: 8096,
   })
 
-  let currentToolId = ''
-  let currentToolName = ''
-  let currentInputJson = ''
+  // Accumulate tool input JSON per tool ID
+  const toolJsonBuffers: Map<string, { name: string; json: string }> = new Map()
 
-  for await (const event of stream) {
-    if (event.type === 'content_block_start') {
-      if (event.content_block.type === 'text') {
-        // text block starting
-      } else if (event.content_block.type === 'tool_use') {
-        currentToolId = event.content_block.id
-        currentToolName = event.content_block.name
-        currentInputJson = ''
-        onToolUse(currentToolName, {})
-      }
-    } else if (event.type === 'content_block_delta') {
-      if (event.delta.type === 'text_delta') {
-        onText(event.delta.text)
-      } else if (event.delta.type === 'input_json_delta') {
-        currentInputJson += event.delta.partial_json
-      }
-    } else if (event.type === 'content_block_stop') {
-      if (currentToolId) {
-        try {
-          const input = JSON.parse(currentInputJson || '{}')
-          toolUses.push({ id: currentToolId, name: currentToolName, input })
-        } catch {
-          toolUses.push({ id: currentToolId, name: currentToolName, input: {} })
+  let result: StreamResult | undefined
+  while (true) {
+    const { value, done } = await gen.next()
+    if (done) {
+      result = value as StreamResult
+      break
+    }
+    const event = value as StreamEvent
+    switch (event.type) {
+      case 'text':
+        onText(event.text!)
+        break
+      case 'tool_start':
+        toolJsonBuffers.set(event.toolId!, { name: event.toolName!, json: '' })
+        onToolUse(event.toolName!, {})
+        break
+      case 'tool_delta':
+        if (toolJsonBuffers.has(event.toolId!)) {
+          toolJsonBuffers.get(event.toolId!)!.json += event.inputJson ?? ''
         }
-        currentToolId = ''
-        currentToolName = ''
-        currentInputJson = ''
+        break
+      case 'tool_end': {
+        const buf = toolJsonBuffers.get(event.toolId!)
+        if (buf) {
+          try {
+            const input = JSON.parse(buf.json || '{}')
+            toolUses.push({ id: event.toolId!, name: buf.name, input })
+          } catch {
+            toolUses.push({ id: event.toolId!, name: buf.name, input: {} })
+          }
+          toolJsonBuffers.delete(event.toolId!)
+        }
+        break
       }
     }
   }
 
-  const finalMsg = await stream.finalMessage()
-  return { toolUses, inputTokens: finalMsg.usage.input_tokens }
+  return {
+    toolUses,
+    inputTokens: result?.inputTokens ?? 0,
+    outputTokens: result?.outputTokens ?? 0,
+    cacheReadTokens: result?.cacheReadTokens ?? 0,
+    cacheCreationTokens: result?.cacheCreationTokens ?? 0,
+  }
 }
 
-export function makeClient(config: Config): Anthropic {
-  return new Anthropic({
-    apiKey: config.api_key,
-    ...(config.base_url ? {
-      baseURL: config.base_url,
-      // Custom endpoints (proxies, OpenRouter) use Bearer auth instead of x-api-key
-      defaultHeaders: { 'Authorization': `Bearer ${config.api_key}` },
-    } : {}),
-  })
+/** Simple non-streaming chat for internal use (compact, context selection) */
+export async function simpleChat(
+  config: Config,
+  model: string,
+  system: string,
+  messages: Message[],
+  maxTokens = 2048,
+): Promise<{ text: string; inputTokens: number; outputTokens: number }> {
+  const provider = getProviderForModel(model)
+  if (!provider) throw new Error(`No provider configured for model: ${model}`)
+  return provider.chat({ model, system, messages, maxTokens })
+}
+
+/** Initialize providers from config */
+export function initProviders(config: Config): void {
+  // Always register anthropic from main api_key
+  registerProvider('anthropic', createProvider({
+    type: 'anthropic',
+    api_key: config.api_key,
+    base_url: config.base_url,
+    name: 'Anthropic',
+  }))
+
+  // Register additional providers from config
+  if (config.providers) {
+    for (const [key, providerConfig] of Object.entries(config.providers)) {
+      registerProvider(key, createProvider(providerConfig))
+    }
+  }
 }
