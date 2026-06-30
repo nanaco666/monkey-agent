@@ -167,7 +167,7 @@ export class TelegramBot {
 
     // Commands
     if (text === '/start') {
-      await this.sendMessage(chatId, '🐒 小猴 ready. 发消息就行，我对世界充满好奇！')
+      await this.sendMessage(chatId, `🐒 ${this.config.assistant_name || 'Monkey'} ready. 发消息就行，我对世界充满好奇！`)
       return
     }
     if (text === '/clear') {
@@ -205,7 +205,7 @@ export class TelegramBot {
     }
     if (text === '/help') {
       await this.sendMessage(chatId, [
-        '🐒 小猴 Commands:',
+        `🐒 ${this.config.assistant_name || 'Monkey'} Commands:`,
         '',
         '/start - 打招呼',
         '/clear - 清空对话',
@@ -325,7 +325,7 @@ export class TelegramBot {
 
   async start(): Promise<void> {
     this.running = true
-    console.log(`🐒 Telegram bot starting... (model: ${this.config.model})`)
+    console.log(`🐒 Telegram bot starting... (model: ${this.config.model}, name: ${this.config.assistant_name || 'Monkey'})`)
 
     // Get bot info
     const me = await this.api('getMe')

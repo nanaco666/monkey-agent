@@ -12,6 +12,7 @@ export interface Config {
   model: string
   fast_model: string
   providers?: Record<string, ProviderConfig>
+  assistant_name?: string
   telegram_bot_token?: string
   telegram_allowed_users?: number[]
 }
@@ -19,6 +20,7 @@ export interface Config {
 const DEFAULTS: Omit<Config, 'api_key'> = {
   model: 'claude-opus-4-6',
   fast_model: 'claude-sonnet-4-6',
+  assistant_name: 'Monkey',
 }
 
 export function loadConfig(): Config | null {

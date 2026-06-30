@@ -2,3 +2,8 @@ node_modules/
 *.js.map
 .DS_Store
 dist/
+*.log
+
+# Never commit personal data
+# ~/.monkey-cli/ lives outside this repo, but just in case:
+.monkey-cli/

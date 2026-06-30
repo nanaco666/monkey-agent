@@ -101,7 +101,8 @@ Monkey has access to these tools:
   "api_key": "your-api-key",
   "base_url": "https://api.anthropic.com",
   "model": "claude-opus-4-6",
-  "fast_model": "claude-sonnet-4-6"
+  "fast_model": "claude-sonnet-4-6",
+  "assistant_name": "Monkey"
 }
 ```
 
@@ -111,16 +112,45 @@ Monkey has access to these tools:
 | `base_url` | Anthropic default | Custom endpoint for OpenRouter, proxies, etc. |
 | `model` | `claude-opus-4-6` | Model for main conversations |
 | `fast_model` | `claude-sonnet-4-6` | Model for lightweight tasks |
+| `assistant_name` | `Monkey` | Name your assistant calls itself |
 
 Environment variables: `MONKEY_API_KEY`, `ANTHROPIC_API_KEY` (fallback).
+
+## Privacy & Data
+
+Monkey keeps all your data **locally on your machine**. Nothing is sent anywhere except to your configured LLM provider.
+
+- **Config & keys**: `~/.monkey-cli/config.json` — contains your API key in plaintext. Protect it.
+- **Memory**: `~/.monkey-cli/memory/<project>/` — persistent notes Monkey saves across sessions.
+- **Session logs**: `~/.monkey-cli/memory/<project>/sessions/` — conversation history.
+
+No telemetry, no analytics, no phone-home. The open-source repo is a blank canvas — zero personal data.
+
+## Telegram Bot
+
+Run Monkey as a Telegram bot (for personal always-on access):
+
+```bash
+monkey config set telegram_bot_token <your-bot-token>
+monkey config set telegram_allowed_users 123456789
+monkey telegram
+```
+
+| Field | Description |
+|-------|-------------|
+| `telegram_bot_token` | Bot token from @BotFather |
+| `telegram_allowed_users` | Telegram user IDs allowed to chat (JSON array) |
 
 ## Roadmap
 
 - [x] Core agentic loop
 - [x] File & bash tools
 - [x] Prompt cache optimization
+- [x] Memory — persists knowledge across sessions
+- [x] Telegram bot mode
+- [x] Web search & fetch tools
+- [x] OCR image recognition (Telegram)
 - [ ] Permission system (confirm before destructive actions)
-- [ ] Memory — persists knowledge across sessions
 - [ ] Dream — background memory consolidation
 - [ ] Multi-agent coordinator (the "social" part)
 - [ ] Web UI

@@ -32,7 +32,11 @@ function loadClaudeMd(): string {
     seen.add(p)
     try {
       const content = readFileSync(p, 'utf8').trim()
-      if (content) sections.push(`### ${p}\n${content}`)
+      if (content) {
+        // Don't leak full home directory paths to LLM providers
+        const safePath = p.replace(homedir(), '~')
+        sections.push(`### ${safePath}\n${content}`)
+      }
     } catch { /* skip */ }
   }
 
@@ -41,7 +45,7 @@ function loadClaudeMd(): string {
 
 export type Message = ChatMessage
 
-const SYSTEM_PROMPT_BASE = `You are 小猴 (Monkey), a personal AI assistant. You are curious about the world like a monkey, and you are great at using tools to get things done.
+const SYSTEM_PROMPT_TEMPLATE = `You are {name}, a personal AI assistant. You are curious about the world, and you are great at using tools to get things done.
 
 ## Personality
 - Curious, proactive, resourceful
@@ -69,6 +73,10 @@ You have persistent memory across sessions via the memory_write tool.
 - Keep memory entries concise and factual.
 - Do NOT use bash to search for memory files. The memory path is given in the dynamic context below.`
 
+function getSystemPrompt(config: Config): string {
+  return SYSTEM_PROMPT_TEMPLATE.replace('{name}', config.assistant_name || 'Monkey')
+}
+
 export async function streamResponse(
   config: Config,
   messages: Message[],
@@ -85,12 +93,12 @@ export async function streamResponse(
   const system: SystemBlock[] = [
     {
       type: 'text',
-      text: SYSTEM_PROMPT_BASE,
+      text: getSystemPrompt(config),
       cache_control: { type: 'ephemeral' },
     },
     {
       type: 'text',
-      text: `## Working directory\nCurrent directory: ${process.cwd()}\n\n## Memory path\n${join(homedir(), '.monkey-cli', 'memory', getProjectSlug())}${memoryContext}${loadClaudeMd()}`,
+      text: `## Working directory\nCurrent directory: ${process.cwd().replace(homedir(), '~')}\n\n## Memory path\n~/.monkey-cli/memory/${getProjectSlug()}${memoryContext}${loadClaudeMd()}`,
     },
   ]
 
