@@ -27,14 +27,18 @@ export function selectList(label: string, items: string[], defaultIdx = 0): Prom
     if (process.stdin.isTTY) process.stdin.setRawMode(true)
 
     const onKey = (_: unknown, key: { name: string; ctrl: boolean }) => {
-      if (key.ctrl && key.name === 'c') { process.stdout.write('\x1B[?25h'); process.exit(0) }
-      if (key.name === 'up')    { cursor = (cursor - 1 + items.length) % items.length; render() }
-      if (key.name === 'down')  { cursor = (cursor + 1) % items.length; render() }
-      if (key.name === 'return') {
-        process.stdin.removeListener('keypress', onKey)
-        if (process.stdin.isTTY) process.stdin.setRawMode(false)
-        process.stdout.write('\x1B[?25h\n')
-        resolve(cursor)
+      try {
+        if (key.ctrl && key.name === 'c') { process.stdout.write('\x1B[?25h'); process.exit(0) }
+        if (key.name === 'up')    { cursor = (cursor - 1 + items.length) % items.length; render() }
+        if (key.name === 'down')  { cursor = (cursor + 1) % items.length; render() }
+        if (key.name === 'return') {
+          process.stdin.removeListener('keypress', onKey)
+          if (process.stdin.isTTY) process.stdin.setRawMode(false)
+          process.stdout.write('\x1B[?25h\n')
+          resolve(cursor)
+        }
+      } catch {
+        // Swallow errors from unexpected key sequences (e.g. IME composition)
       }
     }
 

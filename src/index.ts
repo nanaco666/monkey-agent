@@ -11,6 +11,22 @@ import { join } from 'path'
 const CRASH_LOG = join(homedir(), '.monkey-cli', 'crash.log')
 
 process.on('uncaughtException', (err) => {
+  // IME composition can trigger errors from readline's keypress parser.
+  // These originate from internal readline code and are non-fatal —
+  // recover terminal state and continue instead of crashing.
+  const isReadlineError = err.stack && (
+    err.stack.includes('readline') ||
+    err.stack.includes('emitKeypressEvents') ||
+    err.stack.includes('keypress')
+  )
+  if (isReadlineError && process.stdin.isTTY) {
+    // Recover terminal state without exiting
+    try { process.stdin.setRawMode(false) } catch {}
+    process.stdout.write('\x1B[?25h\x1B[?2004l')
+    const msg = `[${new Date().toISOString()}] readline error (recovered): ${err.stack ?? err.message}\n`
+    try { appendFileSync(CRASH_LOG, msg) } catch {}
+    return
+  }
   if (process.stdin.isTTY) {
     try { process.stdin.setRawMode(false) } catch {}
   }

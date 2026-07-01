@@ -236,145 +236,152 @@ function readUserInput(prompt: string): Promise<string | null> {
 
     // ── Key handler ────────────────────────────────────────────────────────
     const onKey = (_: unknown, key: { name: string; ctrl: boolean; sequence: string }) => {
-      if (!key) return
+      // Wrap entire handler in try-catch to prevent IME composition crashes
+      try {
+        if (!key) return
 
-      // Bracketed paste
-      if (key.sequence === '\x1B[200~') { pasting = true; pasteBuffer = ''; return }
-      if (key.sequence === '\x1B[201~') {
-        pasting = false
-        const cleaned = pasteBuffer.replace(/\r?\n/g, ' ').trim()
-        pasteBuffer = ''
-        if (!cleaned) return
-        const label = `[pasted ${cleaned.length} chars]`
-        const preview = cleaned.length > 120 ? cleaned.slice(0, 120) + '…' : cleaned
-        segments.push({ kind: 'paste', text: cleaned, label })
-        segments.push({ kind: 'typed', text: '' })
-        process.stdout.write(chalk.dim(label))
-        process.stdout.write(chalk.dim(`\n  ${preview}\n`))
-        process.stdout.write(prompt)
-        for (let i = 0; i < segments.length - 2; i++) {
-          const s = segments[i]
-          process.stdout.write(s.kind === 'typed' ? s.text : chalk.dim(s.label))
-        }
-        process.stdout.write(chalk.dim(label))
-        return
-      }
-      if (pasting) { pasteBuffer += key.sequence ?? ''; return }
-
-      // ── Picker mode keys ─────────────────────────────────────────────────
-      if (pickerMode) {
-        if (key.ctrl && key.name === 'c') { closePicker(); process.stdout.write(prompt); return }
-        if (key.name === 'escape') { closePicker(); process.stdout.write(prompt); return }
-        if (key.name === 'up') { pickerCursor--; renderPicker(); return }
-        if (key.name === 'down') { pickerCursor++; renderPicker(); return }
-        if (key.name === 'return') {
-          const filtered = getFiltered()
-          const entry = filtered[pickerCursor]
-          if (entry) selectPickerEntry(entry)
-          else { closePicker(); process.stdout.write(prompt) }
+        // Bracketed paste
+        if (key.sequence === '\x1B[200~') { pasting = true; pasteBuffer = ''; return }
+        if (key.sequence === '\x1B[201~') {
+          pasting = false
+          const cleaned = pasteBuffer.replace(/\r?\n/g, ' ').trim()
+          pasteBuffer = ''
+          if (!cleaned) return
+          const label = `[pasted ${cleaned.length} chars]`
+          const preview = cleaned.length > 120 ? cleaned.slice(0, 120) + '…' : cleaned
+          segments.push({ kind: 'paste', text: cleaned, label })
+          segments.push({ kind: 'typed', text: '' })
+          process.stdout.write(chalk.dim(label))
+          process.stdout.write(chalk.dim(`\n  ${preview}\n`))
+          process.stdout.write(prompt)
+          for (let i = 0; i < segments.length - 2; i++) {
+            const s = segments[i]
+            process.stdout.write(s.kind === 'typed' ? s.text : chalk.dim(s.label))
+          }
+          process.stdout.write(chalk.dim(label))
           return
         }
-        if (key.name === 'backspace') {
-          if (pickerFilter.length > 0) {
-            pickerFilter = pickerFilter.slice(0, -1)
+        if (pasting) { pasteBuffer += key.sequence ?? ''; return }
+
+        // ── Picker mode keys ─────────────────────────────────────────────────
+        if (pickerMode) {
+          if (key.ctrl && key.name === 'c') { closePicker(); process.stdout.write(prompt); return }
+          if (key.name === 'escape') { closePicker(); process.stdout.write(prompt); return }
+          if (key.name === 'up') { pickerCursor--; renderPicker(); return }
+          if (key.name === 'down') { pickerCursor++; renderPicker(); return }
+          if (key.name === 'return') {
+            const filtered = getFiltered()
+            const entry = filtered[pickerCursor]
+            if (entry) selectPickerEntry(entry)
+            else { closePicker(); process.stdout.write(prompt) }
+            return
+          }
+          if (key.name === 'backspace') {
+            if (pickerFilter.length > 0) {
+              pickerFilter = pickerFilter.slice(0, -1)
+              pickerCursor = 0
+              renderPicker()
+            } else {
+              // Backspace with empty filter: exit picker, restore empty input
+              closePicker()
+              process.stdout.write(prompt)
+            }
+            return
+          }
+          if (key.sequence && !key.ctrl && key.sequence >= ' ') {
+            pickerFilter += key.sequence
             pickerCursor = 0
             renderPicker()
-          } else {
-            // Backspace with empty filter: exit picker, restore empty input
-            closePicker()
-            process.stdout.write(prompt)
           }
           return
         }
-        if (key.sequence && !key.ctrl && key.sequence >= ' ') {
-          pickerFilter += key.sequence
-          pickerCursor = 0
-          renderPicker()
-        }
-        return
-      }
 
-      // ── Normal mode keys ─────────────────────────────────────────────────
-      if (key.ctrl && key.name === 'c') {
-        ctrlCCount++
-        if (ctrlCCount >= 2) { process.stdout.write('\n'); finish(null); return }
-        process.stdout.write(chalk.dim(`\n  (Ctrl+C again to exit)  ${kaomoji.upset()}\n`))
-        process.stdout.write(prompt)
-        segments.length = 0; segments.push({ kind: 'typed', text: '' })
-        placeholder = ''
-        setTimeout(() => { ctrlCCount = 0 }, 2000)
-        return
-      }
-      ctrlCCount = 0
-
-      if (key.name === 'return') {
-        // Clear placeholder from display before submitting
-        if (placeholder) {
-          process.stdout.write(`\x1B[${placeholder.length}C\x1B[${placeholder.length}P`)
+        // ── Normal mode keys ─────────────────────────────────────────────────
+        if (key.ctrl && key.name === 'c') {
+          ctrlCCount++
+          if (ctrlCCount >= 2) { process.stdout.write('\n'); finish(null); return }
+          process.stdout.write(chalk.dim(`\n  (Ctrl+C again to exit)  ${kaomoji.upset()}\n`))
+          process.stdout.write(prompt)
+          segments.length = 0; segments.push({ kind: 'typed', text: '' })
           placeholder = ''
+          setTimeout(() => { ctrlCCount = 0 }, 2000)
+          return
         }
-        process.stdout.write('\n')
-        finish(fullInput())
-        return
-      }
+        ctrlCCount = 0
 
-      if (key.name === 'backspace') {
-        // If placeholder is showing, erase it first visually
-        if (placeholder) {
-          process.stdout.write(`\x1B[${placeholder.length}C\x1B[${placeholder.length}P`)
-          placeholder = ''
+        if (key.name === 'return') {
+          // Clear placeholder from display before submitting
+          if (placeholder) {
+            process.stdout.write(`\x1B[${placeholder.length}C\x1B[${placeholder.length}P`)
+            placeholder = ''
+          }
+          process.stdout.write('\n')
+          finish(fullInput())
+          return
         }
-        while (segments.length > 1) {
+
+        if (key.name === 'backspace') {
+          // If placeholder is showing, erase it first visually
+          if (placeholder) {
+            process.stdout.write(`\x1B[${placeholder.length}C\x1B[${placeholder.length}P`)
+            placeholder = ''
+          }
+          while (segments.length > 1) {
+            const last = segments[segments.length - 1]
+            if (last.kind === 'typed' && last.text.length === 0) {
+              const prev = segments[segments.length - 2]
+              if (prev.kind === 'paste') {
+                const w = prev.label.length
+                segments.splice(segments.length - 2, 2)
+                process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+                return
+              } else { segments.pop(); continue }
+            }
+            break
+          }
           const last = segments[segments.length - 1]
-          if (last.kind === 'typed' && last.text.length === 0) {
-            const prev = segments[segments.length - 2]
-            if (prev.kind === 'paste') {
-              const w = prev.label.length
-              segments.splice(segments.length - 2, 2)
-              process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
-              return
-            } else { segments.pop(); continue }
-          }
-          break
-        }
-        const last = segments[segments.length - 1]
-        if (last.kind === 'paste') {
-          const w = last.label.length; segments.pop()
-          process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
-        } else {
-          const chars = [...last.text]
-          if (chars.length > 0) {
-            const lastChar = chars[chars.length - 1]
-            const w = charDisplayWidth(lastChar)
-            last.text = chars.slice(0, -1).join('')
+          if (last.kind === 'paste') {
+            const w = last.label.length; segments.pop()
             process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+          } else {
+            const chars = [...last.text]
+            if (chars.length > 0) {
+              const lastChar = chars[chars.length - 1]
+              const w = charDisplayWidth(lastChar)
+              last.text = chars.slice(0, -1).join('')
+              process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+            }
           }
-        }
-        return
-      }
-
-      if (key.sequence && !key.ctrl && !key.name?.startsWith('f') && key.sequence >= ' ') {
-        // Entering picker when '/' is first character
-        if (key.sequence === '/' && fullInput() === '') {
-          pickerMode = true
-          pickerFilter = ''
-          pickerCursor = 0
-          pickerRendered = false
-          renderPicker()
           return
         }
-        // Clear placeholder on first keystroke
-        if (placeholder) {
-          process.stdout.write(`\x1B[${placeholder.length}C\x1B[${placeholder.length}P`)
-          placeholder = ''
+
+        if (key.sequence && !key.ctrl && !key.name?.startsWith('f') && key.sequence >= ' ') {
+          // Entering picker when '/' is first character
+          if (key.sequence === '/' && fullInput() === '') {
+            pickerMode = true
+            pickerFilter = ''
+            pickerCursor = 0
+            pickerRendered = false
+            renderPicker()
+            return
+          }
+          // Clear placeholder on first keystroke
+          if (placeholder) {
+            process.stdout.write(`\x1B[${placeholder.length}C\x1B[${placeholder.length}P`)
+            placeholder = ''
+          }
+          const last = segments[segments.length - 1]
+          if (last.kind === 'typed') {
+            last.text += key.sequence
+          } else {
+            segments.push({ kind: 'typed', text: key.sequence })
+          }
+          process.stdout.write(key.sequence)
         }
-        const last = segments[segments.length - 1]
-        if (last.kind === 'typed') {
-          last.text += key.sequence
-        } else {
-          segments.push({ kind: 'typed', text: key.sequence })
-        }
-        process.stdout.write(key.sequence)
+      } catch {
+        // Swallow errors from IME composition / unexpected key sequences
+        // Without this, any unhandled exception in the keypress handler
+        // propagates to uncaughtException → process.exit(1) → terminal crash
       }
     }
 
