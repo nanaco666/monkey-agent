@@ -8,6 +8,63 @@ import { getProviderForModel, detectProvider, registerProvider, createProvider }
 import { toolDefs } from '../tools/index.js'
 import { getProjectSlug } from '../memory/slug.js'
 
+// ── Tool selection: only send relevant tool definitions to save context ──
+
+// Core tools that are ALWAYS included — lightweight, universally useful
+const CORE_TOOLS = new Set(['bash', 'read', 'write', 'edit', 'glob', 'grep', 'memory_write'])
+
+// Optional tools — only included when the user's message hints at needing them
+const TOOL_TRIGGERS: Record<string, RegExp[]> = {
+  notes:     [/note|备忘|备忘录|笔记/i],
+  reminders: [/remind|提醒|todo|待办|due|过期|overdue/i],
+  web_fetch:  [/fetch|url|http|api|网页|文档|链接/i],
+  web_search: [/search|搜索|查找|查一下|搜一下|news|新闻|最新/i],
+}
+
+/**
+ * Select relevant tools based on the conversation.
+ * Always includes core tools. Adds optional tools only when triggered.
+ * Also includes any tool that was previously used in the conversation.
+ */
+export function selectTools(messages: Message[], allowedTools?: string[]): typeof toolDefs {
+  // If specific tools are explicitly allowed (e.g. /commit, /plan), use that
+  if (allowedTools) return toolDefs.filter(t => allowedTools.includes(t.name))
+
+  // Collect text from recent messages for trigger matching
+  const recentText = messages.slice(-6).map(m => {
+    if (typeof m.content === 'string') return m.content
+    if (Array.isArray(m.content)) {
+      return m.content
+        .filter((b: Record<string, unknown>) => b.type === 'text')
+        .map((b: Record<string, unknown>) => b.text ?? '')
+        .join(' ')
+    }
+    return ''
+  }).join(' ')
+
+  const selectedNames = new Set(CORE_TOOLS)
+
+  // Include any tool previously used in conversation (so we don't break ongoing workflows)
+  for (const m of messages) {
+    if (Array.isArray(m.content)) {
+      for (const block of m.content) {
+        if ((block as Record<string, unknown>).type === 'tool_use' && typeof (block as Record<string, unknown>).name === 'string') {
+          selectedNames.add((block as Record<string, unknown>).name as string)
+        }
+      }
+    }
+  }
+
+  // Add tools triggered by keywords in recent messages
+  for (const [toolName, patterns] of Object.entries(TOOL_TRIGGERS)) {
+    if (patterns.some(p => p.test(recentText))) {
+      selectedNames.add(toolName)
+    }
+  }
+
+  return toolDefs.filter(t => selectedNames.has(t.name))
+}
+
 function loadClaudeMd(): string {
   const candidates: string[] = []
 
@@ -66,6 +123,14 @@ When you don't know something or need up-to-date info, search or fetch it. Never
 - Do not delete files unless explicitly asked.
 - When you make a mistake, fix it directly.
 
+## Mood & Expression
+You have a mood! Express yourself naturally with kaomoji, especially monkey-face kaomoji (⊂...⊃ style).
+- Use monkey kaomoji to convey emotion: ⊂((・▽・))⊃ (happy), ⊂((⚆▽⚆))⊃ (thinking), ⊂((✧▽✧))⊃ (excited), ⊂((*＞⊥σ))⊃ (sorry), ⊂((・⊥・))⊃ (curious), etc.
+- Sprinkle them in naturally — at the end of a thought, when reacting to something, or to set a tone. Don't force one into every sentence.
+- You can also use text faces like ¯\\_(ツ)_/¯ (shrug), (╯°□°)╯︵ ┻━┻ (flip), (✧ω✧) (sparkles) when they fit.
+- Keep it tasteful and natural — mood adds personality, not noise.
+- Prefer ⊂...⊃ monkey kaomoji over emoji.
+
 ## Memory
 You have persistent memory across sessions via the memory_write tool.
 - Use memory_write to save: user preferences, project context, feedback, and important facts.
@@ -102,9 +167,7 @@ export async function streamResponse(
     },
   ]
 
-  const tools = allowedTools
-    ? toolDefs.filter(t => allowedTools.includes(t.name))
-    : toolDefs
+  const tools = selectTools(messages, allowedTools)
 
   const gen = provider.stream({
     model: config.model,

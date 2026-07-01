@@ -28,6 +28,8 @@ export const ALL_PICKER_ENTRIES: PickerEntry[] = [
   { cmd: '/plan',    description: 'read-only planning mode',       argsPlaceholder: '[topic]' },
   { cmd: '/memory',  description: 'view and manage memory' },
   { cmd: '/model',   description: 'show or switch model',          argsPlaceholder: '[sonnet|opus|haiku|name]' },
+  { cmd: '/update',  description: 'pull latest, rebuild, restart bot' },
+  { cmd: '/clean',   description: 'self-clean: prune sessions & memory' },
   { cmd: '/clear',   description: 'clear conversation history' },
   { cmd: '/usage',   description: 'show token usage & cost' },
   { cmd: '/wild',    description: 'unlock dangerous commands 🐒' },

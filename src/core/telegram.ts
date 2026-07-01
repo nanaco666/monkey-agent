@@ -12,6 +12,7 @@ import { streamResponse, initProviders } from './api.js'
 import { executeTool } from '../tools/index.js'
 import { buildMemoryContext } from '../memory/context.js'
 import { shouldCompact, compactMessages } from './compact.js'
+import { cleanSessionsOnly, selfClean } from '../memory/clean.js'
 import type { ContentBlock } from '../providers/index.js'
 
 const TELEGRAM_API = 'https://api.telegram.org/bot'
@@ -212,12 +213,64 @@ export class TelegramBot {
         '/model - 查看当前模型',
         '/model <name> - 切换模型',
         '/usage - 查看用量',
+        '/update - 拉最新代码并重启',
+        '/clean - 自清洁：清理过期会话和记忆',
         '/wild - 解锁危险命令 🐒',
         '/tame - 恢复安全模式',
         '/help - 查看帮助',
         '',
         '直接发消息就是聊天，发图片会自动 OCR 识别文字。',
       ].join('\n'))
+      return
+    }
+    if (text === '/clean') {
+      try {
+        const report = await selfClean(this.config)
+        const parts: string[] = []
+        if (report.sessionsRemoved > 0) parts.push(`${report.sessionsRemoved} old sessions removed (${report.sessionsFreedKB}KB)`)
+        else parts.push('no stale sessions')
+        if (report.memoryRemoved > 0) parts.push(`${report.memoryRemoved} stale memory entries removed`)
+        else parts.push('no stale memory')
+        if (report.knowledgeRescued > 0) parts.push(`${report.knowledgeRescued} knowledge entries rescued before deletion`)
+        await this.sendMessage(chatId, `✦ ${parts.join(', ')}`)
+      } catch {
+        await this.sendMessage(chatId, '✗ clean failed')
+      }
+      return
+    }
+    if (text === '/update') {
+      const { execSync: exec } = await import('child_process')
+      const { join } = await import('path')
+      const { homedir } = await import('os')
+      const { existsSync } = await import('fs')
+      const PROJECT_DIR = join(homedir(), 'monkey-cli')
+      const PLIST = join(homedir(), 'Library', 'LaunchAgents', 'com.monkey-cli.telegram-bot.plist')
+      try {
+        const pullOutput = execSync('git pull', { cwd: PROJECT_DIR, encoding: 'utf8', timeout: 30000 }).trim()
+        let msg = ''
+        if (pullOutput.includes('Already up to date.')) {
+          msg = 'already up to date'
+        } else {
+          msg = 'pulled: ' + pullOutput.split('\n')[0]
+        }
+        execSync('npm run build', { cwd: PROJECT_DIR, encoding: 'utf8', timeout: 60000 })
+        msg += '\nbuild ✓'
+
+        if (existsSync(PLIST)) {
+          const listOutput = execSync('launchctl list', { encoding: 'utf8' })
+          if (listOutput.includes('com.monkey-cli.telegram-bot')) {
+            execSync(`launchctl unload "${PLIST}"`, { timeout: 10000 })
+            execSync(`launchctl load "${PLIST}"`, { timeout: 10000 })
+            msg += '\ntelegram bot restarted ✓'
+          }
+        }
+
+        // Send result before this process dies from launchctl restart
+        await this.sendMessage(chatId, `✦ ${msg}`)
+        // This process will be killed by launchctl, new one takes over
+      } catch (err: unknown) {
+        await this.sendMessage(chatId, `✗ ${(err as Error).message?.split('\n')[0]}`)
+      }
       return
     }
 
@@ -316,9 +369,12 @@ export class TelegramBot {
     // Auto-compact
     if (shouldCompact(session.messages.length * 1000)) {
       try {
-        const compacted = await compactMessages(this.config, session.messages)
+        const result = await compactMessages(this.config, session.messages)
         session.messages.length = 0
-        session.messages.push(...compacted)
+        session.messages.push(...result.messages)
+        if (result.knowledgeSaved > 0) {
+          console.log(`   Auto-learned ${result.knowledgeSaved} new things from compacted conversation`)
+        }
       } catch {}
     }
   }
@@ -326,6 +382,12 @@ export class TelegramBot {
   async start(): Promise<void> {
     this.running = true
     console.log(`🐒 Telegram bot starting... (model: ${this.config.model}, name: ${this.config.assistant_name || 'Monkey'})`)
+
+    // Auto-clean stale session logs on startup
+    const sessionClean = cleanSessionsOnly()
+    if (sessionClean.removed > 0) {
+      console.log(`   Cleaned ${sessionClean.removed} old sessions (${sessionClean.freedKB}KB)`)
+    }
 
     // Get bot info
     const me = await this.api('getMe')

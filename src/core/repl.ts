@@ -1,4 +1,8 @@
 import * as readline from 'readline'
+import { execSync } from 'child_process'
+import { homedir } from 'os'
+import { join } from 'path'
+import { existsSync } from 'fs'
 import chalk from 'chalk'
 import type { Config } from '../config/index.js'
 import type { Message } from './api.js'
@@ -9,6 +13,7 @@ import { kaomoji } from '../ui/kaomoji.js'
 import { buildMemoryContext } from '../memory/context.js'
 import { appendSession } from '../memory/store.js'
 import { shouldCompact, compactMessages } from './compact.js'
+import { selfClean, cleanSessionsOnly, type CleanReport } from '../memory/clean.js'
 import { findCommand, ALL_PICKER_ENTRIES, type PickerEntry } from '../commands/index.js'
 import type { ContentBlock } from '../providers/index.js'
 import { detectProvider as detectProviderFn, getProviderForModel as getProviderFn } from '../providers/index.js'
@@ -435,11 +440,17 @@ export async function startRepl(config: Config): Promise<void> {
     memoryContext = await buildMemoryContext(config, '')
     spinner.stop()
     if (memoryContext) process.stdout.write(chalk.dim('  ◆ memory  context loaded\n'))
+
+    // Auto-clean stale session logs (fast, no LLM call)
+    const sessionClean = cleanSessionsOnly()
+    if (sessionClean.removed > 0) {
+      process.stdout.write(chalk.dim(`  ◆ cleaned ${sessionClean.removed} old sessions (${sessionClean.freedKB}KB)\n`))
+    }
   } catch {
     spinner.stop()
   }
 
-  const handleSlash = (input: string): boolean => {
+  const handleSlash = async (input: string): Promise<boolean> => {
     const cmd = input.trim().toLowerCase()
     if (cmd === '/clear') {
       messages.length = 0
@@ -466,6 +477,8 @@ export async function startRepl(config: Config): Promise<void> {
         '  /clear   clear conversation history',
         '  /model   show or switch model (sonnet, opus, 4o, glm...)',
         '  /usage   show token usage & cost',
+        '  /update  pull latest & rebuild & restart bot',
+        '  /clean   self-clean: prune stale sessions & memory',
         '  /wild    unlock dangerous commands 🐒',
         '  /tame    re-enable safety mode',
         '  /help    show this help',
@@ -474,6 +487,25 @@ export async function startRepl(config: Config): Promise<void> {
         '  Ctrl+C×2 exit',
         '',
       ].join('\n')))
+      return true
+    }
+    if (cmd === '/clean') {
+      console.log()
+      try {
+        spinner.start('cleaning...')
+        const report = await selfClean(config)
+        spinner.stop()
+        const parts: string[] = []
+        if (report.sessionsRemoved > 0) parts.push(`${report.sessionsRemoved} old sessions removed (${report.sessionsFreedKB}KB freed)`)
+        else parts.push('no stale sessions')
+        if (report.memoryRemoved > 0) parts.push(`${report.memoryRemoved} stale memory entries removed`)
+        else parts.push('no stale memory')
+        if (report.knowledgeRescued > 0) parts.push(`${report.knowledgeRescued} knowledge entries rescued before deletion`)
+        console.log(chalk.rgb(100, 181, 246)(`  ✦ ${parts.join(', ')} ${kaomoji.random()}\n`))
+      } catch {
+        spinner.stop()
+        console.log(chalk.red('  ✗ clean failed'))
+      }
       return true
     }
     if (cmd === '/model' || cmd.startsWith('/model ')) {
@@ -519,6 +551,47 @@ export async function startRepl(config: Config): Promise<void> {
       ].join('\n')))
       return true
     }
+    if (cmd === '/update') {
+      const PROJECT_DIR = join(homedir(), 'monkey-cli')
+      const PLIST = join(homedir(), 'Library', 'LaunchAgents', 'com.monkey-cli.telegram-bot.plist')
+      console.log()
+      try {
+        // 1. git pull
+        spinner.start('pulling...')
+        const pullOutput = execSync('git pull', { cwd: PROJECT_DIR, encoding: 'utf8', timeout: 30000 }).trim()
+        spinner.stop()
+        if (pullOutput.includes('Already up to date.')) {
+          console.log(chalk.dim('  already up to date  ' + kaomoji.random()))
+        } else {
+          console.log(chalk.rgb(107, 140, 78)(`  ${pullOutput.split('\n')[0]}`))
+        }
+
+        // 2. npm run build
+        spinner.start('building...')
+        execSync('npm run build', { cwd: PROJECT_DIR, encoding: 'utf8', timeout: 60000 })
+        spinner.stop()
+        console.log(chalk.rgb(107, 140, 78)('  build ✓'))
+
+        // 3. restart telegram bot if running under launchd
+        if (existsSync(PLIST)) {
+          const listOutput = execSync('launchctl list', { encoding: 'utf8' })
+          if (listOutput.includes('com.monkey-cli.telegram-bot')) {
+            spinner.start('restarting telegram bot...')
+            execSync(`launchctl unload "${PLIST}"`, { timeout: 10000 })
+            execSync(`launchctl load "${PLIST}"`, { timeout: 10000 })
+            spinner.stop()
+            console.log(chalk.rgb(240, 183, 49)('  telegram bot restarted ✓'))
+          }
+        }
+
+        console.log(chalk.rgb(100, 181, 246)(`\n  ✦ updated! ${kaomoji.random()}\n`))
+      } catch (err: unknown) {
+        spinner.stop()
+        console.log(chalk.red(`  ✗ ${(err as Error).message?.split('\n')[0]}`))
+        console.log()
+      }
+      return true
+    }
     return false
   }
 
@@ -537,7 +610,7 @@ export async function startRepl(config: Config): Promise<void> {
     if (!trimmed) continue
 
     if (trimmed.startsWith('/')) {
-      if (handleSlash(trimmed)) continue
+      if (await handleSlash(trimmed)) continue
 
       // Slash commands like /commit, /plan, /memory
       const [cmdName, ...cmdArgParts] = trimmed.slice(1).split(' ')
@@ -708,12 +781,13 @@ export async function startRepl(config: Config): Promise<void> {
       if (shouldCompact(lastInputTokens)) {
         try {
           spinner.start('compacting context...')
-          const compacted = await compactMessages(config, messages)
+          const result = await compactMessages(config, messages)
           spinner.stop()
-          const removed = messages.length - compacted.length
+          const removed = messages.length - result.messages.length
           messages.length = 0
-          messages.push(...compacted)
-          process.stdout.write(chalk.dim(`  ◆ context compacted  (−${removed} messages)\n\n`))
+          messages.push(...result.messages)
+          const extra = result.knowledgeSaved > 0 ? chalk.rgb(240, 183, 49)(`  ◆ learned ${result.knowledgeSaved} new things\n`) : ''
+          process.stdout.write(chalk.dim(`  ◆ context compacted  (−${removed} messages)\n`) + extra + '\n')
         } catch {
           spinner.stop()
         }
