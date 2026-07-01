@@ -2,14 +2,15 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { existsSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { homedir } from 'os'
+import { homedir, platform } from 'os'
 
 const execAsync = promisify(exec)
 const AUTH_FILE = join(homedir(), '.monkey-cli', '.notes_authorized')
+const isMac = platform() === 'darwin'
 
 export const notesToolDef = {
   name: 'notes',
-  description: 'Manage macOS Notes. Actions: list, show, add, search, folders, delete.',
+  description: 'Manage macOS Notes. Actions: list, show, add, search, folders, delete. macOS only — not available on other platforms.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -73,6 +74,8 @@ async function authorize(): Promise<string> {
 }
 
 export async function runNotes(input: Record<string, unknown>): Promise<string> {
+  if (!isMac) return 'Error: Notes tool is only available on macOS.'
+
   const { action, name, body, folder, keyword } = input as {
     action: string; name?: string; body?: string; folder?: string; keyword?: string
   }

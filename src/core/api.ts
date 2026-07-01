@@ -1,4 +1,4 @@
-import { homedir } from 'os'
+import { homedir, platform } from 'os'
 import { join } from 'path'
 import { readFileSync, existsSync } from 'fs'
 import { execSync } from 'child_process'
@@ -20,6 +20,9 @@ const TOOL_TRIGGERS: Record<string, RegExp[]> = {
   web_fetch:  [/fetch|url|http|api|网页|文档|链接/i],
   web_search: [/search|搜索|查找|查一下|搜一下|news|新闻|最新/i],
 }
+
+// macOS-only tools — excluded from tool list on other platforms
+const MACOS_ONLY = new Set(['notes', 'reminders'])
 
 /**
  * Select relevant tools based on the conversation.
@@ -60,6 +63,12 @@ export function selectTools(messages: Message[], allowedTools?: string[]): typeo
     if (patterns.some(p => p.test(recentText))) {
       selectedNames.add(toolName)
     }
+  }
+
+  // Exclude macOS-only tools on non-macOS
+  const isMac = platform() === 'darwin'
+  if (!isMac) {
+    for (const name of MACOS_ONLY) selectedNames.delete(name)
   }
 
   return toolDefs.filter(t => selectedNames.has(t.name))

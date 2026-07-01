@@ -1,12 +1,15 @@
 import { exec } from 'child_process'
 import { promisify } from 'util'
+import { platform } from 'os'
 
 const execAsync = promisify(exec)
 const TIMEOUT_MS = 30_000
 
+const isWindows = platform() === 'win32'
+
 export const bashToolDef = {
   name: 'bash',
-  description: 'Execute a shell command in the current working directory. Returns stdout and stderr. Avoid interactive commands.',
+  description: `Execute a shell command in the current working directory. Returns stdout and stderr. Avoid interactive commands. ${isWindows ? 'Running on Windows — use cmd/powershell syntax.' : ''}`,
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -22,7 +25,7 @@ export async function runBash(command: string, timeout = TIMEOUT_MS): Promise<st
     const { stdout, stderr } = await execAsync(command, {
       timeout,
       maxBuffer: 1024 * 1024 * 10, // 10MB
-      shell: '/bin/bash',
+      shell: isWindows ? 'powershell.exe' : '/bin/bash',
     })
     const out = [stdout, stderr].filter(Boolean).join('\n').trim()
     return out || '(no output)'

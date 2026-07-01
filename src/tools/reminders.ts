@@ -2,14 +2,15 @@ import { exec } from 'child_process'
 import { promisify } from 'util'
 import { existsSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
-import { homedir } from 'os'
+import { homedir, platform } from 'os'
 
 const execAsync = promisify(exec)
 const AUTH_FILE = join(homedir(), '.monkey-cli', '.reminders_authorized')
+const isMac = platform() === 'darwin'
 
 export const remindersToolDef = {
   name: 'reminders',
-  description: 'Manage macOS Reminders. Actions: list (overdue|today|upcoming|all), done, add, delete, lists.',
+  description: 'Manage macOS Reminders. Actions: list (overdue|today|upcoming|all), done, add, delete, lists. macOS only — not available on other platforms.',
   input_schema: {
     type: 'object' as const,
     properties: {
@@ -75,6 +76,8 @@ async function authorize(): Promise<string> {
 }
 
 export async function runReminders(input: Record<string, unknown>): Promise<string> {
+  if (!isMac) return 'Error: Reminders tool is only available on macOS.'
+
   const { action, filter, name, due_date, list_name } = input as {
     action: string; filter?: string; name?: string; due_date?: string; list_name?: string
   }
