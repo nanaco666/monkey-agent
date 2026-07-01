@@ -12,7 +12,7 @@ A terminal-first AI coding assistant with persistent memory, self-learning, and 
 
 ---
 
-<img src="assets/banner.svg" alt="MONKEY" width="680">
+<img src="assets/banner.png" alt="MONKEY" width="680">
 
 ## ✨ Highlights
 
