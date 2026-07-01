@@ -1,11 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="680" height="120" viewBox="0 0 680 120">
-  <style>
-    text { fill: #e8622a; font-family: 'Courier New', Courier, monospace; font-size: 16px; font-weight: bold; }
-  </style>
-  <text x="10" y="20">  ███╗   ███╗ ██████╗ ███╗   ██╗██╗  ██╗███████╗██╗   ██╗</text>
-  <text x="10" y="38">  ████╗ ████║██╔═══██╗████╗  ██║██║ ██╔╝██╔════╝╚██╗ ██╔╝</text>
-  <text x="10" y="56">  ██╔████╔██║██║   ██║██╔██╗ ██║█████╔╝ █████╗   ╚████╔╝</text>
-  <text x="10" y="74">  ██║╚██╔╝██║██║   ██║██║╚██╗██║██╔═██╗ ██╔══╝    ╚██╔╝</text>
-  <text x="10" y="92">  ██║ ╚═╝ ██║╚██████╔╝██║ ╚████║██║  ██╗███████╗   ██║</text>
-  <text x="10" y="110">  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝   ╚═╝</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="680" height="130" viewBox="0 0 680 130">
+  <defs>
+    <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#e8622a"/>
+      <stop offset="50%" style="stop-color:#f0b731"/>
+      <stop offset="100%" style="stop-color:#6b8c4e"/>
+    </linearGradient>
+    <linearGradient id="g2" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f0b731"/>
+      <stop offset="50%" style="stop-color:#6b8c4e"/>
+      <stop offset="100%" style="stop-color:#64b5f6"/>
+    </linearGradient>
+    <linearGradient id="g3" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#6b8c4e"/>
+      <stop offset="50%" style="stop-color:#64b5f6"/>
+      <stop offset="100%" style="stop-color:#e8622a"/>
+    </linearGradient>
+    <linearGradient id="g4" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#64b5f6"/>
+      <stop offset="50%" style="stop-color:#e8622a"/>
+      <stop offset="100%" style="stop-color:#f0b731"/>
+    </linearGradient>
+    <linearGradient id="g5" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#e8622a"/>
+      <stop offset="50%" style="stop-color:#f0b731"/>
+      <stop offset="100%" style="stop-color:#64b5f6"/>
+    </linearGradient>
+    <linearGradient id="g6" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#f0b731"/>
+      <stop offset="50%" style="stop-color:#64b5f6"/>
+      <stop offset="100%" style="stop-color:#6b8c4e"/>
+    </linearGradient>
+  </defs>
+  <text x="10" y="20" font-family="'Courier New',Courier,monospace" font-size="16" font-weight="bold" fill="url(#g1)">  ███╗   ███╗ ██████╗ ███╗   ██╗██╗  ██╗███████╗██╗   ██╗</text>
+  <text x="10" y="38" font-family="'Courier New',Courier,monospace" font-size="16" font-weight="bold" fill="url(#g2)">  ████╗ ████║██╔═══██╗████╗  ██║██║ ██╔╝██╔════╝╚██╗ ██╔╝</text>
+  <text x="10" y="56" font-family="'Courier New',Courier,monospace" font-size="16" font-weight="bold" fill="url(#g3)">  ██╔████╔██║██║   ██║██╔██╗ ██║█████╔╝ █████╗   ╚████╔╝</text>
+  <text x="10" y="74" font-family="'Courier New',Courier,monospace" font-size="16" font-weight="bold" fill="url(#g4)">  ██║╚██╔╝██║██║   ██║██║╚██╗██║██╔═██╗ ██╔══╝    ╚██╔╝</text>
+  <text x="10" y="92" font-family="'Courier New',Courier,monospace" font-size="16" font-weight="bold" fill="url(#g5)">  ██║ ╚═╝ ██║╚██████╔╝██║ ╚████║██║  ██╗███████╗   ██║</text>
+  <text x="10" y="110" font-family="'Courier New',Courier,monospace" font-size="16" font-weight="bold" fill="url(#g6)">  ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝   ╚═╝</text>
 </svg>
