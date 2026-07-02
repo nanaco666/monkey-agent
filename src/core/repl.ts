@@ -360,7 +360,7 @@ function readUserInput(prompt: string): Promise<string | null> {
           return
         }
 
-        if (key.sequence && !key.ctrl && !key.name?.startsWith('f') && key.sequence >= ' ') {
+        if (key.sequence && !key.ctrl && !/^f\d+$/.test(key.name || '') && key.sequence >= ' ') {
           // Entering picker when '/' is first character
           if (key.sequence === '/' && fullInput() === '') {
             pickerMode = true
