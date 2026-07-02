@@ -82,6 +82,15 @@ if (args[0] === 'telegram' || args[0] === 'tg') {
   process.exit(0)
 }
 
+// App protocol mode: monkey app (JSON-RPC over stdio for macOS GUI)
+if (args[0] === 'app') {
+  // app-protocol takes over stdin/stdout, registers handlers, and keeps process alive
+  // until 'shutdown' method or SIGTERM.
+  // We use a deferred promise so this await never resolves.
+  await import('./core/app-protocol.js')
+  await new Promise<void>(() => {}) // never resolves
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'))
 printBanner(config.model, pkg.version)

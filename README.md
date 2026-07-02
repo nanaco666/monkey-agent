@@ -142,6 +142,36 @@ Monkey remembers things across sessions. It stores knowledge in `~/.monkey-cli/m
 - **`/clean`** — full cleanup: stale sessions + LLM-reviewed memory deduplication
 - **Safety guard** — all deletions are restricted to `~/.monkey-cli/` only (path validation + traversal protection)
 
+## 🍎 macOS Native App
+
+Monkey also comes as a native macOS app — no terminal needed.
+
+### Build & Install
+
+```bash
+cd monkey-cli
+npm run build                           # Build CLI first
+cd MonkeyApp && swift build -c release  # Build Swift app
+```
+
+Then install to `/Applications`:
+
+```bash
+./scripts/build-app.sh
+```
+
+The app communicates with the Monkey CLI via a JSON-RPC protocol over stdio (`monkey app`). It supports:
+
+- Streaming chat responses with tool execution
+- Model switching via toolbar menu
+- Wild/Tame mode toggle
+- Slash commands
+- Token usage display
+- Code blocks with copy button
+- Keyboard shortcuts (⌘⇧K to clear, ⌘⇧E to compact)
+
+The app appears in `/Applications` and launches like any other macOS app.
+
 ## 📱 Telegram Bot
 
 Run Monkey as an always-on Telegram bot:
@@ -204,6 +234,7 @@ No telemetry, no analytics, no phone-home. The open-source repo is a blank canva
 - [x] Self-cleaning with knowledge rescue & safe delete guard
 - [x] On-demand tool loading (context trimming)
 - [x] Kaomoji mood system
+- [x] macOS native app (SwiftUI)
 - [ ] Permission system (confirm before destructive actions)
 - [ ] Dream — background memory consolidation
 - [ ] Multi-agent coordinator

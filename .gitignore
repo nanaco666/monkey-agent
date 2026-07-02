@@ -4,6 +4,11 @@ node_modules/
 dist/
 *.log
 
+# Swift build artifacts
+MonkeyApp/.build/
+MonkeyApp/.swiftpm/
+MonkeyApp/Packages/
+
 # Never commit personal data
 # ~/.monkey-cli/ lives outside this repo, but just in case:
 .monkey-cli/
