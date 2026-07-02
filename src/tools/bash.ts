@@ -1,10 +1,7 @@
-import { exec } from 'child_process'
-import { promisify } from 'util'
+import { spawn } from 'child_process'
 import { platform } from 'os'
 
-const execAsync = promisify(exec)
 const TIMEOUT_MS = 30_000
-
 const isWindows = platform() === 'win32'
 
 export const bashToolDef = {
@@ -20,19 +17,52 @@ export const bashToolDef = {
   },
 }
 
-export async function runBash(command: string, timeout = TIMEOUT_MS): Promise<string> {
-  try {
-    const { stdout, stderr } = await execAsync(command, {
+export async function runBash(command: string, timeout = TIMEOUT_MS, signal?: AbortSignal): Promise<string> {
+  // 如果已经中止，直接返回
+  if (signal?.aborted) return 'Error: aborted'
+
+  return new Promise((resolve) => {
+    const shell = isWindows ? 'powershell.exe' : '/bin/bash'
+    const shellArgs = isWindows ? ['/c', command] : ['-c', command]
+    const child = spawn(shell, shellArgs, {
       timeout,
-      maxBuffer: 1024 * 1024 * 10, // 10MB
-      shell: isWindows ? 'powershell.exe' : '/bin/bash',
     })
-    const out = [stdout, stderr].filter(Boolean).join('\n').trim()
-    return out || '(no output)'
-  } catch (err: unknown) {
-    const e = err as { stdout?: string; stderr?: string; message?: string; killed?: boolean }
-    if (e.killed) return `Error: command timed out after ${timeout}ms`
-    const out = [e.stdout, e.stderr].filter(Boolean).join('\n').trim()
-    return out || e.message || 'Unknown error'
-  }
+
+    let stdout = ''
+    let stderr = ''
+
+    child.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
+    child.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
+
+    child.on('close', (code: number | null) => {
+      const out = [stdout, stderr].filter(Boolean).join('\n').trim()
+      if (signal?.aborted) {
+        resolve('Error: command aborted')
+        return
+      }
+      if (code !== null && code !== 0 && !out) {
+        resolve(`Error: exit code ${code}`)
+        return
+      }
+      resolve(out || '(no output)')
+    })
+
+    child.on('error', (err: Error) => {
+      resolve(`Error: ${err.message}`)
+    })
+
+    // 监听中止信号，kill 子进程
+    if (signal) {
+      const onAbort = () => {
+        child.kill('SIGTERM')
+        // 给 2 秒优雅退出，否则强杀
+        setTimeout(() => { child.kill('SIGKILL') }, 2000)
+      }
+      if (signal.aborted) {
+        onAbort()
+      } else {
+        signal.addEventListener('abort', onAbort, { once: true })
+      }
+    }
+  })
 }

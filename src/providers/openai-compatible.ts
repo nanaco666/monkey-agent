@@ -99,48 +99,62 @@ export function createOpenAICompatibleProvider(apiKey: string, baseUrl: string, 
         tools: tools.length > 0 ? tools : undefined,
         stream: true,
         stream_options: { include_usage: true },
-      })
+      }, { signal: opts.signal })
 
       const toolCalls: Map<number, { id: string; name: string; args: string }> = new Map()
       let inputTokens = 0
       let outputTokens = 0
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices?.[0]?.delta
+      try {
+        for await (const chunk of stream) {
+          // 检查中止信号
+          if (opts.signal?.aborted) break
 
-        if (delta?.content) {
-          yield { type: 'text', text: delta.content }
-        }
+          const delta = chunk.choices?.[0]?.delta
 
-        if (delta?.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const idx = tc.index
-            if (!toolCalls.has(idx)) {
-              const id = tc.id ?? `call_${idx}`
-              const name = tc.function?.name ?? ''
-              toolCalls.set(idx, { id, name, args: '' })
-              yield { type: 'tool_start', toolId: id, toolName: name }
+          if (delta?.content) {
+            yield { type: 'text', text: delta.content }
+          }
+
+          if (delta?.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const idx = tc.index
+              if (!toolCalls.has(idx)) {
+                const id = tc.id ?? `call_${idx}`
+                const name = tc.function?.name ?? ''
+                toolCalls.set(idx, { id, name, args: '' })
+                yield { type: 'tool_start', toolId: id, toolName: name }
+              }
+              if (tc.function?.arguments) {
+                const entry = toolCalls.get(idx)!
+                entry.args += tc.function.arguments
+                yield { type: 'tool_delta', toolId: entry.id, inputJson: tc.function.arguments }
+              }
             }
-            if (tc.function?.arguments) {
-              const entry = toolCalls.get(idx)!
-              entry.args += tc.function.arguments
-              yield { type: 'tool_delta', toolId: entry.id, inputJson: tc.function.arguments }
+          }
+
+          // Usage in final chunk
+          if (chunk.usage) {
+            inputTokens = chunk.usage.prompt_tokens ?? 0
+            outputTokens = chunk.usage.completion_tokens ?? 0
+          }
+
+          // Finish reason — emit tool_end for all pending tools
+          if (chunk.choices?.[0]?.finish_reason) {
+            for (const [, entry] of toolCalls) {
+              yield { type: 'tool_end', toolId: entry.id, toolName: entry.name }
             }
           }
         }
-
-        // Usage in final chunk
-        if (chunk.usage) {
-          inputTokens = chunk.usage.prompt_tokens ?? 0
-          outputTokens = chunk.usage.completion_tokens ?? 0
+      } catch (err: unknown) {
+        // AbortError 是正常的中止
+        if (opts.signal?.aborted) return {
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
         }
-
-        // Finish reason — emit tool_end for all pending tools
-        if (chunk.choices?.[0]?.finish_reason) {
-          for (const [, entry] of toolCalls) {
-            yield { type: 'tool_end', toolId: entry.id, toolName: entry.name }
-          }
-        }
+        throw err
       }
 
       return {
@@ -158,7 +172,7 @@ export function createOpenAICompatibleProvider(apiKey: string, baseUrl: string, 
         model: opts.model,
         max_tokens: opts.maxTokens,
         messages,
-      })
+      }, { signal: opts.signal })
 
       const text = response.choices[0]?.message?.content ?? ''
       return {

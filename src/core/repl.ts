@@ -18,7 +18,7 @@ import { findCommand, ALL_PICKER_ENTRIES, type PickerEntry } from '../commands/i
 import type { ContentBlock } from '../providers/index.js'
 import { detectProvider as detectProviderFn, getProviderForModel as getProviderFn } from '../providers/index.js'
 import { calculateCost } from './pricing.js'
-import { clipboardImageToText } from './ocr.js'
+import { clipboardImageToText, clipboardHasImage } from './ocr.js'
 
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ')
 
@@ -418,6 +418,34 @@ interface TokenUsage {
   requests: number
 }
 
+// 中止控制器：AI 工作时非空，Ctrl+C 触发 abort
+let activeAbortController: AbortController | null = null
+let abortInterruptHandler: ((_: unknown, key: { name: string; ctrl: boolean }) => void) | null = null
+
+function enableInterrupt(): AbortController {
+  const controller = new AbortController()
+  activeAbortController = controller
+  // 注册全局 keypress 监听器，当 AI 工作时 Ctrl+C 中止
+  abortInterruptHandler = (_: unknown, key: { name: string; ctrl: boolean }) => {
+    if (key?.ctrl && key?.name === 'c' && activeAbortController) {
+      activeAbortController.abort()
+    }
+  }
+  process.stdin.on('keypress', abortInterruptHandler)
+  // 确保 raw mode 以接收 Ctrl+C
+  if (process.stdin.isTTY) process.stdin.setRawMode(true)
+  readline.emitKeypressEvents(process.stdin)
+  return controller
+}
+
+function disableInterrupt(): void {
+  if (abortInterruptHandler) {
+    process.stdin.removeListener('keypress', abortInterruptHandler)
+    abortInterruptHandler = null
+  }
+  activeAbortController = null
+}
+
 export async function startRepl(config: Config): Promise<void> {
   const messages: Message[] = []
   let memoryContext = ''
@@ -479,7 +507,7 @@ export async function startRepl(config: Config): Promise<void> {
         '',
         '  /clear   clear conversation history',
         '  /model   show or switch model (sonnet, opus, 4o, glm...)',
-        '  /img     OCR clipboard image and chat about it',
+        '  /img     OCR clipboard image and chat about it (or just Enter with image in clipboard)',
         '  /usage   show token usage & cost',
         '  /update  pull latest & rebuild & restart bot',
         '  /clean   self-clean: prune stale sessions & memory',
@@ -487,8 +515,8 @@ export async function startRepl(config: Config): Promise<void> {
         '  /tame    re-enable safety mode',
         '  /help    show this help',
         '',
-        '  Ctrl+C   interrupt response',
-        '  Ctrl+C×2 exit',
+        '  Ctrl+C   interrupt response (while AI is working)',
+        '  Ctrl+C×2 exit (while typing)',
         '',
       ].join('\n')))
       return true
@@ -610,7 +638,18 @@ export async function startRepl(config: Config): Promise<void> {
     }
 
     const trimmed = userInput.trim()
-    if (!trimmed) continue
+    if (!trimmed) {
+      // Empty input + clipboard has image → auto OCR
+      if (clipboardHasImage()) {
+        const ocrText = clipboardImageToText()
+        if (ocrText) {
+          messages.push({ role: 'user', content: ocrText })
+          appendSession({ ts: new Date().toISOString(), role: 'user', content: ocrText })
+          console.log()
+        }
+      }
+      continue
+    }
 
     if (trimmed.startsWith('/')) {
       // /img: OCR clipboard image, inject as user message
@@ -642,6 +681,10 @@ export async function startRepl(config: Config): Promise<void> {
             spinner.stop()
           }
           try {
+            // 启用 Ctrl+C 中止
+            const cmdAbortController = enableInterrupt()
+            let cmdAborted = false
+
             while (true) {
               cmdText = ''
               cmdThinkingStarted = false
@@ -649,6 +692,7 @@ export async function startRepl(config: Config): Promise<void> {
               const cmdStreamResult = await streamResponse(
                 config, cmdMessages,
                 (text) => {
+                  if (cmdAbortController.signal.aborted) return
                   if (!cmdThinkingStarted) { clearTimeout(cmdThinkingTimer!); cmdThinkingTimer = null }
                   else { clearCmdThinking(); cmdThinkingStarted = false }
                   process.stdout.write(text)
@@ -657,10 +701,17 @@ export async function startRepl(config: Config): Promise<void> {
                 () => { clearCmdThinking(); cmdThinkingStarted = false },
                 memoryContext,
                 slashCmd.allowedTools,
+                cmdAbortController.signal,
               )
               const { toolUses } = cmdStreamResult
               trackUsage(cmdStreamResult)
               clearCmdThinking()
+
+              if (cmdAbortController.signal.aborted) {
+                cmdAborted = true
+                break
+              }
+
               if (cmdText) process.stdout.write('\n')
               const assistantBlocks: unknown[] = []
               if (cmdText) assistantBlocks.push({ type: 'text', text: cmdText })
@@ -674,17 +725,25 @@ export async function startRepl(config: Config): Promise<void> {
                 let spinnerShown = false
                 slowTimer = setTimeout(() => { spinnerShown = true; spinner.start(TOOL_MESSAGES[t.name] ?? 'working...') }, SLOW_TOOL_MS)
                 const start = Date.now()
-                const result = await executeTool(t.name, t.input)
+                const result = await executeTool(t.name, t.input, cmdAbortController.signal)
                 const elapsed = Date.now() - start
                 if (slowTimer) clearTimeout(slowTimer)
                 if (spinnerShown) spinner.stop()
+                if (cmdAbortController.signal.aborted) { cmdAborted = true; break }
                 printToolResult(t.name, result, elapsed)
                 toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: result })
               }
+              if (cmdAborted) break
               cmdMessages.push({ role: 'user', content: toolResults })
               console.log()
             }
+
+            disableInterrupt()
+            if (cmdAborted) {
+              process.stdout.write(chalk.rgb(240, 183, 49)(`\n  ⏹ stopped  ${kaomoji.upset()}\n`))
+            }
           } catch (err: unknown) {
+            disableInterrupt()
             clearCmdThinking()
             console.log(chalk.red(`\n  ✗ ${(err as Error).message || String(err)}`))
           }
@@ -704,6 +763,7 @@ export async function startRepl(config: Config): Promise<void> {
     let responseText = ''
     let thinkingTimer: ReturnType<typeof setTimeout> | null = null
     let lastInputTokens = 0
+    let aborted = false
 
     const clearThinking = () => {
       if (thinkingTimer) { clearTimeout(thinkingTimer); thinkingTimer = null }
@@ -711,6 +771,9 @@ export async function startRepl(config: Config): Promise<void> {
     }
 
     try {
+      // 启用 Ctrl+C 中断
+      const abortController = enableInterrupt()
+
       while (true) {
         responseText = ''
         let thinkingStarted = false
@@ -724,9 +787,10 @@ export async function startRepl(config: Config): Promise<void> {
           config,
           messages,
           (text) => {
+            if (abortController.signal.aborted) return
             if (!thinkingStarted) { clearTimeout(thinkingTimer!); thinkingTimer = null }
             else { clearThinking(); thinkingStarted = false }
-            process.stdout.write(text) // use terminal's native foreground color
+            process.stdout.write(text)
             responseText += text
           },
           (_name, _input) => {
@@ -734,9 +798,18 @@ export async function startRepl(config: Config): Promise<void> {
             thinkingStarted = false
           },
           memoryContext,
+          undefined,
+          abortController.signal,
         )
         const { toolUses, inputTokens: tokens } = streamResult
         trackUsage(streamResult)
+
+        // 如果被中止，跳出循环
+        if (abortController.signal.aborted) {
+          clearThinking()
+          aborted = true
+          break
+        }
 
         clearThinking()
         if (responseText) {
@@ -779,23 +852,52 @@ export async function startRepl(config: Config): Promise<void> {
           }
 
           const start = Date.now()
-          const result = await executeTool(t.name, t.input)
+          const result = await executeTool(t.name, t.input, abortController.signal)
           const elapsed = Date.now() - start
 
           if (slowTimer) clearTimeout(slowTimer)
           if (spinnerShown) spinner.stop()
 
+          // 中止时，不继续执行后续工具
+          if (abortController.signal.aborted) {
+            aborted = true
+            break
+          }
+
           printToolResult(t.name, result, elapsed)
           toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: result })
         }
+
+        if (aborted) break
 
         lastInputTokens = tokens
         messages.push({ role: 'user', content: toolResults })
         console.log()
       }
 
+      // 禁用中断
+      disableInterrupt()
+
+      if (aborted) {
+        // 中止时：移除最后一条不完整的 assistant 消息（如果有的话）
+        // 保留已经输出的文本作为上下文，但清理 tool_use 部分
+        if (messages.length > 0 && messages[messages.length - 1].role === 'assistant') {
+          const lastMsg = messages[messages.length - 1]
+          if (Array.isArray(lastMsg.content)) {
+            // 只保留文本部分，移除未完成的 tool_use
+            const textBlocks = lastMsg.content.filter((b: Record<string, unknown>) => b.type === 'text')
+            if (textBlocks.length > 0) {
+              messages[messages.length - 1] = { role: 'assistant', content: textBlocks }
+            } else {
+              messages.pop()
+            }
+          }
+        }
+        process.stdout.write(chalk.rgb(240, 183, 49)(`\n  ⏹ stopped  ${kaomoji.upset()}\n`))
+      }
+
       // Auto-compact when context gets too long
-      if (shouldCompact(lastInputTokens)) {
+      if (!aborted && shouldCompact(lastInputTokens)) {
         try {
           spinner.start('compacting context...')
           const result = await compactMessages(config, messages)
@@ -810,6 +912,7 @@ export async function startRepl(config: Config): Promise<void> {
         }
       }
     } catch (err: unknown) {
+      disableInterrupt()
       clearThinking()
       const msg = (err as Error).message || String(err)
       console.log(chalk.red(`\n  ✗ ${msg}`))

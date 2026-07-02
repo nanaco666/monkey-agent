@@ -158,6 +158,7 @@ export async function streamResponse(
   onToolUse: (name: string, input: Record<string, unknown>) => void,
   memoryContext = '',
   allowedTools?: string[],
+  signal?: AbortSignal,
 ): Promise<{ toolUses: Array<{ id: string; name: string; input: Record<string, unknown> }>; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number }> {
   const provider = getProviderForModel(config.model)
   if (!provider) throw new Error(`No provider configured for model: ${config.model}`)
@@ -184,6 +185,7 @@ export async function streamResponse(
     messages,
     tools,
     maxTokens: 8096,
+    signal,
   })
 
   // Accumulate tool input JSON per tool ID

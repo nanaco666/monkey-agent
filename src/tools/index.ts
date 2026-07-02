@@ -23,10 +23,10 @@ export const toolDefs = [
   webSearchDef,
 ]
 
-export async function executeTool(name: string, input: Record<string, unknown>): Promise<string> {
+export async function executeTool(name: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<string> {
   switch (name) {
     case 'bash':
-      return runBash(input.command as string, input.timeout_ms as number | undefined)
+      return runBash(input.command as string, input.timeout_ms as number | undefined, signal)
     case 'read':
       return runRead(input.path as string, input.start_line as number | undefined, input.end_line as number | undefined)
     case 'write':

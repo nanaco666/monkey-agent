@@ -41,6 +41,7 @@ export interface Provider {
     messages: ChatMessage[]
     tools: ToolDef[]
     maxTokens: number
+    signal?: AbortSignal
   }): AsyncGenerator<StreamEvent, StreamResult>
 
   /** Simple non-streaming completion (for compact/context) */
@@ -49,6 +50,7 @@ export interface Provider {
     system?: string
     messages: ChatMessage[]
     maxTokens: number
+    signal?: AbortSignal
   }): Promise<{ text: string; inputTokens: number; outputTokens: number }>
 }
 
