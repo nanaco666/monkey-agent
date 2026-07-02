@@ -19,23 +19,27 @@ function toOpenAIMessages(system: string | SystemBlock[], messages: ChatMessage[
     } else {
       // Convert content blocks
       if (msg.role === 'user') {
-        // User messages can have text or tool_result blocks
+        // User messages can have text, image, or tool_result blocks
         const parts: OpenAI.ChatCompletionMessageParam[] = []
-        const textParts: string[] = []
+        const multimodalParts: OpenAI.ChatCompletionContentPart[] = []
         for (const block of msg.content) {
           if (block.type === 'text') {
-            textParts.push(block.text)
+            multimodalParts.push({ type: 'text', text: block.text })
+          } else if (block.type === 'image') {
+            multimodalParts.push({
+              type: 'image_url',
+              image_url: { url: `data:${block.source.media_type};base64,${block.source.data}` },
+            })
           } else if (block.type === 'tool_result') {
-            // Tool results become separate messages in OpenAI format
-            if (textParts.length > 0) {
-              parts.push({ role: 'user', content: textParts.join('\n') })
-              textParts.length = 0
+            // Flush multimodal parts first
+            if (multimodalParts.length > 0) {
+              parts.push({ role: 'user', content: multimodalParts.splice(0) })
             }
             parts.push({ role: 'tool', tool_call_id: block.tool_use_id, content: block.content })
           }
         }
-        if (textParts.length > 0) {
-          parts.push({ role: 'user', content: textParts.join('\n') })
+        if (multimodalParts.length > 0) {
+          parts.push({ role: 'user', content: multimodalParts })
         }
         result.push(...parts)
       } else {

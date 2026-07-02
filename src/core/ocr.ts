@@ -1,8 +1,10 @@
 /**
- * Clipboard image OCR: grab image from macOS clipboard, run Vision OCR, return text.
+ * Clipboard image handling: detect, save, and OCR images from macOS clipboard.
+ * OCR is used as auxiliary context for vision models — the image itself is sent
+ * as base64, and OCR text helps the model understand the content.
  */
 import { execSync } from 'child_process'
-import { writeFileSync, unlinkSync, existsSync } from 'fs'
+import { writeFileSync, unlinkSync, existsSync, readFileSync } from 'fs'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import chalk from 'chalk'
@@ -36,18 +38,14 @@ export function clipboardHasImage(): boolean {
 }
 
 /**
- * Save clipboard image to a temp file and run OCR on it.
- * Returns the recognized text, or null if no image in clipboard.
+ * Save clipboard image to a temp PNG file.
+ * Returns the temp file path, or null if no image in clipboard.
  */
-export function clipboardImageToText(verbose = true): string | null {
-  if (!clipboardHasImage()) {
-    if (verbose) console.log(chalk.dim('  clipboard has no image'))
-    return null
-  }
+export function saveClipboardImage(): string | null {
+  if (!clipboardHasImage()) return null
 
   const tmpPath = `/tmp/monkey_clip_${Date.now()}.png`
 
-  // Save clipboard image
   const script = CLIPBOARD_APPLESCRIPT.replace('%s', tmpPath)
   try {
     const result = execSync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, {
@@ -55,46 +53,65 @@ export function clipboardImageToText(verbose = true): string | null {
       timeout: 10000,
     }).trim()
 
-    if (!result.startsWith('OK')) {
-      if (verbose) console.log(chalk.red(`  ✗ failed to read clipboard image`))
-      return null
-    }
+    if (!result.startsWith('OK') || !existsSync(tmpPath)) return null
+    return tmpPath
   } catch {
-    if (verbose) console.log(chalk.red(`  ✗ failed to read clipboard image`))
     return null
   }
+}
 
-  if (!existsSync(tmpPath)) {
-    if (verbose) console.log(chalk.red(`  ✗ no image saved`))
-    return null
-  }
-
-  // Run OCR
+/**
+ * Read an image file as base64 data URI.
+ */
+export function imageToBase64(filePath: string): { mediaType: string; data: string } | null {
   try {
-    if (verbose) spinner.start('OCR...')
-    const text = execSync(`"${OCR_BIN}" "${tmpPath}"`, {
+    if (!existsSync(filePath)) return null
+    const buf = readFileSync(filePath)
+    const ext = filePath.toLowerCase()
+    let mediaType = 'image/png'
+    if (ext.endsWith('.jpg') || ext.endsWith('.jpeg')) mediaType = 'image/jpeg'
+    else if (ext.endsWith('.gif')) mediaType = 'image/gif'
+    else if (ext.endsWith('.webp')) mediaType = 'image/webp'
+    return { mediaType, data: buf.toString('base64') }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Run OCR on an image file. Returns recognized text or null.
+ */
+export function ocrImageFile(filePath: string): string | null {
+  if (!existsSync(filePath)) return null
+
+  try {
+    spinner.start('OCR...')
+    const text = execSync(`"${OCR_BIN}" "${filePath}"`, {
       encoding: 'utf8',
       timeout: 30000,
     }).trim()
-    if (verbose) spinner.stop()
+    spinner.stop()
 
     if (!text) {
-      if (verbose) console.log(chalk.dim('  no text recognized in image'))
+      console.log(chalk.dim('  no text recognized in image'))
       return null
     }
 
-    if (verbose) {
-      const preview = text.length > 200 ? text.slice(0, 200) + '…' : text
-      console.log(chalk.rgb(107, 140, 78)(`  ◆ OCR ${text.length} chars`))
-      console.log(chalk.dim(`  ${preview}`))
-    }
+    const preview = text.length > 200 ? text.slice(0, 200) + '…' : text
+    console.log(chalk.rgb(107, 140, 78)(`  ◆ OCR ${text.length} chars`))
+    console.log(chalk.dim(`  ${preview}`))
 
     return text
   } catch (err) {
-    if (verbose) spinner.stop()
+    spinner.stop()
     console.log(chalk.red(`  ✗ OCR failed: ${(err as Error).message?.split('\n')[0]}`))
     return null
-  } finally {
-    try { unlinkSync(tmpPath) } catch {}
   }
+}
+
+/**
+ * Clean up temp image file.
+ */
+export function cleanupTempImage(filePath: string): void {
+  try { unlinkSync(filePath) } catch {}
 }

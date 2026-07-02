@@ -18,7 +18,7 @@ import { findCommand, ALL_PICKER_ENTRIES, type PickerEntry } from '../commands/i
 import type { ContentBlock } from '../providers/index.js'
 import { detectProvider as detectProviderFn, getProviderForModel as getProviderFn } from '../providers/index.js'
 import { calculateCost } from './pricing.js'
-import { clipboardImageToText, clipboardHasImage } from './ocr.js'
+import { clipboardHasImage, saveClipboardImage, imageToBase64, ocrImageFile, cleanupTempImage } from './ocr.js'
 
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ')
 
@@ -134,19 +134,26 @@ function charDisplayWidth(ch: string): number {
   return 1
 }
 
-// A segment is either a typed string or a paste block.
+// A segment is either a typed string, a paste block, or an image placeholder.
 // We track segments so that backspace knows what is displayed on screen for each
 // piece of input (typed chars echo 1:1; a paste block shows a short label).
 type TypedSegment = { kind: 'typed'; text: string }
 type PasteSegment = { kind: 'paste'; text: string; label: string }
-type Segment = TypedSegment | PasteSegment
+type ImageSegment = { kind: 'image'; label: string; tmpPath: string }
+type Segment = TypedSegment | PasteSegment | ImageSegment
 
 function segmentDisplayWidth(seg: Segment): number {
-  if (seg.kind === 'paste') return seg.label.length // ASCII label, all width-1
+  if (seg.kind === 'paste' || seg.kind === 'image') return seg.label.length // ASCII label, all width-1
   return [...seg.text].reduce((sum, ch) => sum + charDisplayWidth(ch), 0)
 }
 
-function readUserInput(prompt: string): Promise<string | null> {
+interface InputResult {
+  text: string           // display text (with [image] placeholders)
+  content: string | ContentBlock[]  // actual message content (multimodal if images)
+  hasImage: boolean      // whether images need vision-capable model
+}
+
+function readUserInput(prompt: string): Promise<InputResult | null> {
   return new Promise(resolve => {
     process.stdout.write(prompt)
     process.stdout.write('\x1B[?2004h') // enable bracketed paste
@@ -165,9 +172,48 @@ function readUserInput(prompt: string): Promise<string | null> {
     let pickerRendered = false
     let placeholder = '' // dim args hint after command selection
 
-    const fullInput = () => segments.map(s => s.text).join('')
+    const fullInput = () => segments.map(s => {
+      if (s.kind === 'image') return '[image]'
+      return s.text
+    }).join('')
 
-    const finish = (value: string | null) => {
+    // Build message content from segments — returns multimodal array when images are present
+    const buildMessageContent = (): string | ContentBlock[] => {
+      const hasImage = segments.some(s => s.kind === 'image')
+      if (!hasImage) return fullInput()
+
+      const blocks: ContentBlock[] = []
+      for (const s of segments) {
+        if (s.kind === 'image') {
+          const imgData = imageToBase64(s.tmpPath)
+          if (imgData) {
+            blocks.push({
+              type: 'image',
+              source: { type: 'base64', media_type: imgData.mediaType, data: imgData.data },
+            })
+            // Run OCR as auxiliary context
+            const ocrText = ocrImageFile(s.tmpPath)
+            if (ocrText) {
+              blocks.push({ type: 'text', text: `[OCR context]\n${ocrText}` })
+            }
+          }
+        } else if (s.kind === 'paste') {
+          if (s.text) blocks.push({ type: 'text', text: s.text })
+        } else {
+          if (s.text) blocks.push({ type: 'text', text: s.text })
+        }
+      }
+      return blocks
+    }
+
+    // Cleanup temp image files from segments
+    const cleanupImages = () => {
+      for (const s of segments) {
+        if (s.kind === 'image') cleanupTempImage(s.tmpPath)
+      }
+    }
+
+    const finish = (value: InputResult | null) => {
       process.stdin.removeListener('keypress', onKey)
       if (process.stdin.isTTY) process.stdin.setRawMode(false)
       process.stdout.write('\x1B[?2004l')
@@ -229,7 +275,7 @@ function readUserInput(prompt: string): Promise<string | null> {
       if (!entry.argsPlaceholder) {
         // No args: submit immediately
         process.stdout.write(prompt + entry.cmd + '\n')
-        finish(entry.cmd)
+        finish({ text: entry.cmd, content: entry.cmd, hasImage: false })
       } else {
         // Fill input with command, show dim placeholder
         const typed = entry.cmd + ' '
@@ -306,7 +352,12 @@ function readUserInput(prompt: string): Promise<string | null> {
         // ── Normal mode keys ─────────────────────────────────────────────────
         if (key.ctrl && key.name === 'c') {
           ctrlCCount++
-          if (ctrlCCount >= 2) { process.stdout.write('\n'); finish(null); return }
+          if (ctrlCCount >= 2) {
+            cleanupImages()
+            process.stdout.write('\n')
+            finish(null)
+            return
+          }
           process.stdout.write(chalk.dim(`\n  (Ctrl+C again to exit)  ${kaomoji.upset()}\n`))
           process.stdout.write(prompt)
           segments.length = 0; segments.push({ kind: 'typed', text: '' })
@@ -323,7 +374,13 @@ function readUserInput(prompt: string): Promise<string | null> {
             placeholder = ''
           }
           process.stdout.write('\n')
-          finish(fullInput())
+          const text = fullInput()
+          const hasImage = segments.some(s => s.kind === 'image')
+          if (hasImage) {
+            finish({ text, content: buildMessageContent(), hasImage: true })
+          } else {
+            finish({ text, content: text, hasImage: false })
+          }
           return
         }
 
@@ -342,12 +399,22 @@ function readUserInput(prompt: string): Promise<string | null> {
                 segments.splice(segments.length - 2, 2)
                 process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
                 return
+              } else if (prev.kind === 'image') {
+                cleanupTempImage(prev.tmpPath)
+                const w = prev.label.length
+                segments.splice(segments.length - 2, 2)
+                process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+                return
               } else { segments.pop(); continue }
             }
             break
           }
           const last = segments[segments.length - 1]
           if (last.kind === 'paste') {
+            const w = last.label.length; segments.pop()
+            process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
+          } else if (last.kind === 'image') {
+            cleanupTempImage(last.tmpPath)
             const w = last.label.length; segments.pop()
             process.stdout.write(`\x1B[${w}D${' '.repeat(w)}\x1B[${w}D`)
           } else {
@@ -384,6 +451,19 @@ function readUserInput(prompt: string): Promise<string | null> {
             segments.push({ kind: 'typed', text: key.sequence })
           }
           process.stdout.write(key.sequence)
+        }
+
+        // Ctrl+V: paste image from clipboard
+        if (key.ctrl && key.name === 'v') {
+          if (clipboardHasImage()) {
+            const tmpPath = saveClipboardImage()
+            if (tmpPath) {
+              const label = '[image]'
+              segments.push({ kind: 'image', label, tmpPath })
+              segments.push({ kind: 'typed', text: '' })
+              process.stdout.write(chalk.rgb(240, 183, 49)(label))
+            }
+          }
         }
       } catch {
         // Swallow errors from IME composition / unexpected key sequences
@@ -507,7 +587,8 @@ export async function startRepl(config: Config): Promise<void> {
         '',
         '  /clear   clear conversation history',
         '  /model   show or switch model (sonnet, opus, 4o, glm...)',
-        '  /img     OCR clipboard image and chat about it (or just Enter with image in clipboard)',
+        '  /img     attach clipboard image as vision message',
+        '  Ctrl+V  paste clipboard image into input as [image]',
         '  /usage   show token usage & cost',
         '  /update  pull latest & rebuild & restart bot',
         '  /clean   self-clean: prune stale sessions & memory',
@@ -629,35 +710,39 @@ export async function startRepl(config: Config): Promise<void> {
   process.stdout.write('\n')
 
   while (true) {
-    const userInput = await readUserInput(getPrompt())
+    const inputResult = await readUserInput(getPrompt())
 
     // null means double Ctrl+C → exit
-    if (userInput === null) {
+    if (inputResult === null) {
       console.log(chalk.rgb(245, 242, 235)(`\n  bye ${kaomoji.random()}\n`))
       process.exit(0)
     }
 
-    const trimmed = userInput.trim()
+    const trimmed = inputResult.text.trim()
     if (!trimmed) {
-      // Empty input + clipboard has image → auto OCR
-      if (clipboardHasImage()) {
-        const ocrText = clipboardImageToText()
-        if (ocrText) {
-          messages.push({ role: 'user', content: ocrText })
-          appendSession({ ts: new Date().toISOString(), role: 'user', content: ocrText })
-          console.log()
-        }
-      }
+      // Empty input — nothing to do
       continue
     }
 
     if (trimmed.startsWith('/')) {
-      // /img: OCR clipboard image, inject as user message
+      // /img: paste clipboard image as vision message
       if (trimmed.toLowerCase() === '/img') {
-        const ocrText = clipboardImageToText()
-        if (!ocrText) continue
-        messages.push({ role: 'user', content: ocrText })
-        appendSession({ ts: new Date().toISOString(), role: 'user', content: ocrText })
+        if (!clipboardHasImage()) {
+          console.log(chalk.dim('  clipboard has no image'))
+          continue
+        }
+        const tmpPath = saveClipboardImage()
+        if (!tmpPath) continue
+        const imgData = imageToBase64(tmpPath)
+        if (!imgData) { cleanupTempImage(tmpPath); continue }
+        const ocrText = ocrImageFile(tmpPath)
+        const blocks: ContentBlock[] = [
+          { type: 'image', source: { type: 'base64', media_type: imgData.mediaType, data: imgData.data } },
+        ]
+        if (ocrText) blocks.push({ type: 'text', text: `[OCR context]\n${ocrText}` })
+        messages.push({ role: 'user', content: blocks })
+        appendSession({ ts: new Date().toISOString(), role: 'user', content: '[image]' })
+        cleanupTempImage(tmpPath)
         console.log()
         // Skip both the slash command block and the normal message push below
         // — message already pushed, go straight to response handling
@@ -675,7 +760,6 @@ export async function startRepl(config: Config): Promise<void> {
           console.log()
           let cmdText = ''
           let cmdThinkingTimer: ReturnType<typeof setTimeout> | null = null
-          let cmdThinkingStarted = false
           const clearCmdThinking = () => {
             if (cmdThinkingTimer) { clearTimeout(cmdThinkingTimer); cmdThinkingTimer = null }
             spinner.stop()
@@ -687,18 +771,36 @@ export async function startRepl(config: Config): Promise<void> {
 
             while (true) {
               cmdText = ''
-              cmdThinkingStarted = false
-              cmdThinkingTimer = setTimeout(() => { cmdThinkingStarted = true; spinner.start('thinking...') }, SLOW_TOOL_MS)
+              let cmdThinkingPhase: 'none' | 'static' | 'spinner' = 'none'
+              spinner.showStatic('thinking...')
+              cmdThinkingPhase = 'static'
+              cmdThinkingTimer = setTimeout(() => {
+                if (cmdThinkingPhase === 'static') {
+                  cmdThinkingPhase = 'spinner'
+                  spinner.start('thinking...')
+                }
+              }, SLOW_TOOL_MS)
               const cmdStreamResult = await streamResponse(
                 config, cmdMessages,
                 (text) => {
                   if (cmdAbortController.signal.aborted) return
-                  if (!cmdThinkingStarted) { clearTimeout(cmdThinkingTimer!); cmdThinkingTimer = null }
-                  else { clearCmdThinking(); cmdThinkingStarted = false }
+                  if (cmdThinkingPhase !== 'none') {
+                    clearTimeout(cmdThinkingTimer!)
+                    cmdThinkingTimer = null
+                    spinner.stop()
+                    cmdThinkingPhase = 'none'
+                  }
                   process.stdout.write(text)
                   cmdText += text
                 },
-                () => { clearCmdThinking(); cmdThinkingStarted = false },
+                (_name, _input) => {
+                  if (cmdThinkingPhase !== 'none') {
+                    clearTimeout(cmdThinkingTimer!)
+                    cmdThinkingTimer = null
+                    spinner.stop()
+                    cmdThinkingPhase = 'none'
+                  }
+                },
                 memoryContext,
                 slashCmd.allowedTools,
                 cmdAbortController.signal,
@@ -751,12 +853,12 @@ export async function startRepl(config: Config): Promise<void> {
           continue
         }
         // Not a known slash command — treat as normal message
-        messages.push({ role: 'user', content: trimmed })
-        appendSession({ ts: new Date().toISOString(), role: 'user', content: trimmed })
+        messages.push({ role: 'user', content: inputResult.content })
+        appendSession({ ts: new Date().toISOString(), role: 'user', content: inputResult.text })
       }
     } else {
-      messages.push({ role: 'user', content: trimmed })
-      appendSession({ ts: new Date().toISOString(), role: 'user', content: trimmed })
+      messages.push({ role: 'user', content: inputResult.content })
+      appendSession({ ts: new Date().toISOString(), role: 'user', content: inputResult.text })
     }
     console.log()
 
@@ -776,11 +878,17 @@ export async function startRepl(config: Config): Promise<void> {
 
       while (true) {
         responseText = ''
-        let thinkingStarted = false
+        let thinkingPhase: 'none' | 'static' | 'spinner' = 'none'
+
+        // Show static placeholder immediately, upgrade to spinner after delay
+        spinner.showStatic('thinking...')
+        thinkingPhase = 'static'
 
         thinkingTimer = setTimeout(() => {
-          thinkingStarted = true
-          spinner.start('thinking...')
+          if (thinkingPhase === 'static') {
+            thinkingPhase = 'spinner'
+            spinner.start('thinking...')
+          }
         }, SLOW_TOOL_MS)
 
         const streamResult = await streamResponse(
@@ -788,14 +896,23 @@ export async function startRepl(config: Config): Promise<void> {
           messages,
           (text) => {
             if (abortController.signal.aborted) return
-            if (!thinkingStarted) { clearTimeout(thinkingTimer!); thinkingTimer = null }
-            else { clearThinking(); thinkingStarted = false }
+            if (thinkingPhase !== 'none') {
+              clearTimeout(thinkingTimer!)
+              thinkingTimer = null
+              spinner.stop()
+              thinkingPhase = 'none'
+            }
             process.stdout.write(text)
             responseText += text
           },
           (_name, _input) => {
-            clearThinking()
-            thinkingStarted = false
+            // Clear thinking placeholder immediately when tool starts
+            if (thinkingPhase !== 'none') {
+              clearTimeout(thinkingTimer!)
+              thinkingTimer = null
+              spinner.stop()
+              thinkingPhase = 'none'
+            }
           },
           memoryContext,
           undefined,

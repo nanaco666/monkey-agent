@@ -1,5 +1,35 @@
 import Anthropic from '@anthropic-ai/sdk'
-import type { Provider, StreamEvent, StreamResult, ChatMessage, ToolDef, SystemBlock } from './types.js'
+import type { Provider, StreamEvent, StreamResult, ChatMessage, ToolDef, SystemBlock, ContentBlock } from './types.js'
+
+// Convert our internal message format to Anthropic format
+function toAnthropicMessages(messages: ChatMessage[]): Anthropic.MessageParam[] {
+  return messages.map(msg => {
+    if (typeof msg.content === 'string') {
+      return { role: msg.role, content: msg.content } as Anthropic.MessageParam
+    }
+    // Convert content blocks
+    const blocks: Anthropic.ContentBlockParam[] = []
+    for (const block of msg.content) {
+      if (block.type === 'text') {
+        blocks.push({ type: 'text', text: block.text })
+      } else if (block.type === 'image') {
+        blocks.push({
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: block.source.media_type as Anthropic.Base64ImageSource['media_type'],
+            data: block.source.data,
+          },
+        })
+      } else if (block.type === 'tool_use') {
+        blocks.push({ type: 'tool_use', id: block.id, name: block.name, input: block.input as Record<string, unknown> })
+      } else if (block.type === 'tool_result') {
+        blocks.push({ type: 'tool_result', tool_use_id: block.tool_use_id, content: block.content })
+      }
+    }
+    return { role: msg.role, content: blocks } as Anthropic.MessageParam
+  })
+}
 
 export function createAnthropicProvider(apiKey: string, baseUrl?: string): Provider {
   const client = new Anthropic({
@@ -23,7 +53,7 @@ export function createAnthropicProvider(apiKey: string, baseUrl?: string): Provi
         max_tokens: opts.maxTokens,
         system: systemBlocks as Anthropic.TextBlockParam[],
         tools: opts.tools as Anthropic.Tool[],
-        messages: opts.messages as Anthropic.MessageParam[],
+        messages: toAnthropicMessages(opts.messages),
       }, { signal: opts.signal })
 
       let currentToolId = ''
@@ -82,7 +112,7 @@ export function createAnthropicProvider(apiKey: string, baseUrl?: string): Provi
         model: opts.model,
         max_tokens: opts.maxTokens,
         ...(opts.system ? { system: opts.system } : {}),
-        messages: opts.messages as Anthropic.MessageParam[],
+        messages: toAnthropicMessages(opts.messages),
       }, { signal: opts.signal })
 
       const text = response.content[0].type === 'text' ? response.content[0].text : ''
