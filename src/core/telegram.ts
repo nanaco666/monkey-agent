@@ -178,6 +178,9 @@ export class TelegramBot {
       return
     }
 
+    // Strip @botname suffix from commands (Telegram sends /cmd@botname when using menu)
+    text = text.replace(/^\/(\w+)@\w+/, '/$1')
+
     // Commands
     if (text === '/start') {
       await this.sendMessage(chatId, `🐒 ${this.config.assistant_name || 'Monkey'} ready. 发消息就行，我对世界充满好奇！`)
