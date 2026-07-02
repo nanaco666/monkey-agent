@@ -31,6 +31,7 @@ export const ALL_PICKER_ENTRIES: PickerEntry[] = [
   { cmd: '/update',  description: 'pull latest, rebuild, restart bot' },
   { cmd: '/clean',   description: 'self-clean: prune sessions & memory' },
   { cmd: '/clear',   description: 'clear conversation history' },
+  { cmd: '/img',     description: 'OCR clipboard image & chat' },
   { cmd: '/usage',   description: 'show token usage & cost' },
   { cmd: '/wild',    description: 'unlock dangerous commands 🐒' },
   { cmd: '/tame',    description: 're-enable safety mode' },

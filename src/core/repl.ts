@@ -18,6 +18,7 @@ import { findCommand, ALL_PICKER_ENTRIES, type PickerEntry } from '../commands/i
 import type { ContentBlock } from '../providers/index.js'
 import { detectProvider as detectProviderFn, getProviderForModel as getProviderFn } from '../providers/index.js'
 import { calculateCost } from './pricing.js'
+import { clipboardImageToText } from './ocr.js'
 
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ')
 
@@ -453,6 +454,7 @@ export async function startRepl(config: Config): Promise<void> {
 
   const handleSlash = async (input: string): Promise<boolean> => {
     const cmd = input.trim().toLowerCase()
+
     if (cmd === '/clear') {
       messages.length = 0
       console.log(chalk.rgb(100, 181, 246)('\n  ✦ Conversation cleared.\n'))
@@ -477,6 +479,7 @@ export async function startRepl(config: Config): Promise<void> {
         '',
         '  /clear   clear conversation history',
         '  /model   show or switch model (sonnet, opus, 4o, glm...)',
+        '  /img     OCR clipboard image and chat about it',
         '  /usage   show token usage & cost',
         '  /update  pull latest & rebuild & restart bot',
         '  /clean   self-clean: prune stale sessions & memory',
@@ -610,78 +613,92 @@ export async function startRepl(config: Config): Promise<void> {
     if (!trimmed) continue
 
     if (trimmed.startsWith('/')) {
-      if (await handleSlash(trimmed)) continue
-
-      // Slash commands like /commit, /plan, /memory
-      const [cmdName, ...cmdArgParts] = trimmed.slice(1).split(' ')
-      const slashCmd = findCommand(cmdName)
-      if (slashCmd) {
-        const cmdArgs = cmdArgParts.join(' ')
-        const prompt = slashCmd.buildPrompt(cmdArgs)
-        // Run as a fresh one-shot exchange with restricted tools, without polluting main messages
-        const cmdMessages: typeof messages = [{ role: 'user', content: prompt }]
+      // /img: OCR clipboard image, inject as user message
+      if (trimmed.toLowerCase() === '/img') {
+        const ocrText = clipboardImageToText()
+        if (!ocrText) continue
+        messages.push({ role: 'user', content: ocrText })
+        appendSession({ ts: new Date().toISOString(), role: 'user', content: ocrText })
         console.log()
-        let cmdText = ''
-        let cmdThinkingTimer: ReturnType<typeof setTimeout> | null = null
-        let cmdThinkingStarted = false
-        const clearCmdThinking = () => {
-          if (cmdThinkingTimer) { clearTimeout(cmdThinkingTimer); cmdThinkingTimer = null }
-          spinner.stop()
-        }
-        try {
-          while (true) {
-            cmdText = ''
-            cmdThinkingStarted = false
-            cmdThinkingTimer = setTimeout(() => { cmdThinkingStarted = true; spinner.start('thinking...') }, SLOW_TOOL_MS)
-            const cmdStreamResult = await streamResponse(
-              config, cmdMessages,
-              (text) => {
-                if (!cmdThinkingStarted) { clearTimeout(cmdThinkingTimer!); cmdThinkingTimer = null }
-                else { clearCmdThinking(); cmdThinkingStarted = false }
-                process.stdout.write(text)
-                cmdText += text
-              },
-              () => { clearCmdThinking(); cmdThinkingStarted = false },
-              memoryContext,
-              slashCmd.allowedTools,
-            )
-            const { toolUses } = cmdStreamResult
-            trackUsage(cmdStreamResult)
-            clearCmdThinking()
-            if (cmdText) process.stdout.write('\n')
-            const assistantBlocks: unknown[] = []
-            if (cmdText) assistantBlocks.push({ type: 'text', text: cmdText })
-            for (const t of toolUses) assistantBlocks.push({ type: 'tool_use', id: t.id, name: t.name, input: t.input })
-            if (assistantBlocks.length > 0) cmdMessages.push({ role: 'assistant', content: assistantBlocks as never })
-            if (toolUses.length === 0) break
-            const toolResults: ContentBlock[] = []
-            for (const t of toolUses) {
-              printToolCall(t.name, t.input)
-              let slowTimer: ReturnType<typeof setTimeout> | null = null
-              let spinnerShown = false
-              slowTimer = setTimeout(() => { spinnerShown = true; spinner.start(TOOL_MESSAGES[t.name] ?? 'working...') }, SLOW_TOOL_MS)
-              const start = Date.now()
-              const result = await executeTool(t.name, t.input)
-              const elapsed = Date.now() - start
-              if (slowTimer) clearTimeout(slowTimer)
-              if (spinnerShown) spinner.stop()
-              printToolResult(t.name, result, elapsed)
-              toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: result })
-            }
-            cmdMessages.push({ role: 'user', content: toolResults })
-            console.log()
-          }
-        } catch (err: unknown) {
-          clearCmdThinking()
-          console.log(chalk.red(`\n  ✗ ${(err as Error).message || String(err)}`))
-        }
-        process.stdout.write('\n')
-        continue
-      }
-    }
+        // Skip both the slash command block and the normal message push below
+        // — message already pushed, go straight to response handling
+      } else {
+        if (await handleSlash(trimmed)) continue
 
-    messages.push({ role: 'user', content: trimmed })
-    appendSession({ ts: new Date().toISOString(), role: 'user', content: trimmed })
+        // Slash commands like /commit, /plan, /memory
+        const [cmdName, ...cmdArgParts] = trimmed.slice(1).split(' ')
+        const slashCmd = findCommand(cmdName)
+        if (slashCmd) {
+          const cmdArgs = cmdArgParts.join(' ')
+          const cmdPrompt = slashCmd.buildPrompt(cmdArgs)
+          // Run as a fresh one-shot exchange with restricted tools, without polluting main messages
+          const cmdMessages: typeof messages = [{ role: 'user', content: cmdPrompt }]
+          console.log()
+          let cmdText = ''
+          let cmdThinkingTimer: ReturnType<typeof setTimeout> | null = null
+          let cmdThinkingStarted = false
+          const clearCmdThinking = () => {
+            if (cmdThinkingTimer) { clearTimeout(cmdThinkingTimer); cmdThinkingTimer = null }
+            spinner.stop()
+          }
+          try {
+            while (true) {
+              cmdText = ''
+              cmdThinkingStarted = false
+              cmdThinkingTimer = setTimeout(() => { cmdThinkingStarted = true; spinner.start('thinking...') }, SLOW_TOOL_MS)
+              const cmdStreamResult = await streamResponse(
+                config, cmdMessages,
+                (text) => {
+                  if (!cmdThinkingStarted) { clearTimeout(cmdThinkingTimer!); cmdThinkingTimer = null }
+                  else { clearCmdThinking(); cmdThinkingStarted = false }
+                  process.stdout.write(text)
+                  cmdText += text
+                },
+                () => { clearCmdThinking(); cmdThinkingStarted = false },
+                memoryContext,
+                slashCmd.allowedTools,
+              )
+              const { toolUses } = cmdStreamResult
+              trackUsage(cmdStreamResult)
+              clearCmdThinking()
+              if (cmdText) process.stdout.write('\n')
+              const assistantBlocks: unknown[] = []
+              if (cmdText) assistantBlocks.push({ type: 'text', text: cmdText })
+              for (const t of toolUses) assistantBlocks.push({ type: 'tool_use', id: t.id, name: t.name, input: t.input })
+              if (assistantBlocks.length > 0) cmdMessages.push({ role: 'assistant', content: assistantBlocks as never })
+              if (toolUses.length === 0) break
+              const toolResults: ContentBlock[] = []
+              for (const t of toolUses) {
+                printToolCall(t.name, t.input)
+                let slowTimer: ReturnType<typeof setTimeout> | null = null
+                let spinnerShown = false
+                slowTimer = setTimeout(() => { spinnerShown = true; spinner.start(TOOL_MESSAGES[t.name] ?? 'working...') }, SLOW_TOOL_MS)
+                const start = Date.now()
+                const result = await executeTool(t.name, t.input)
+                const elapsed = Date.now() - start
+                if (slowTimer) clearTimeout(slowTimer)
+                if (spinnerShown) spinner.stop()
+                printToolResult(t.name, result, elapsed)
+                toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: result })
+              }
+              cmdMessages.push({ role: 'user', content: toolResults })
+              console.log()
+            }
+          } catch (err: unknown) {
+            clearCmdThinking()
+            console.log(chalk.red(`\n  ✗ ${(err as Error).message || String(err)}`))
+          }
+          process.stdout.write('\n')
+          continue
+        }
+        // Not a known slash command — treat as normal message
+        messages.push({ role: 'user', content: trimmed })
+        appendSession({ ts: new Date().toISOString(), role: 'user', content: trimmed })
+      }
+    } else {
+      messages.push({ role: 'user', content: trimmed })
+      appendSession({ ts: new Date().toISOString(), role: 'user', content: trimmed })
+    }
     console.log()
 
     let responseText = ''
