@@ -17,6 +17,7 @@ import { selfClean, cleanSessionsOnly, type CleanReport } from '../memory/clean.
 import { findCommand, ALL_PICKER_ENTRIES, type PickerEntry } from '../commands/index.js'
 import type { ContentBlock } from '../providers/index.js'
 import { detectProvider as detectProviderFn, getProviderForModel as getProviderFn } from '../providers/index.js'
+import { calculateCost } from './pricing.js'
 
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ')
 
@@ -535,18 +536,17 @@ export async function startRepl(config: Config): Promise<void> {
     if (cmd === '/usage') {
       const fmtK = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n)
       const totalTokens = usage.inputTokens + usage.outputTokens
-      const costInput = usage.inputTokens * 3 / 1_000_000   // $3/M input
-      const costOutput = usage.outputTokens * 15 / 1_000_000 // $15/M output
-      const costCacheRead = usage.cacheReadTokens * 0.3 / 1_000_000 // $0.30/M cache read
-      const costCacheCreate = usage.cacheCreationTokens * 3.75 / 1_000_000 // $3.75/M cache write
-      const totalCost = costInput + costOutput + costCacheRead + costCacheCreate
+      const providerKey = detectProviderFn(config.model)
+      const { cost, currency } = calculateCost(providerKey, config.model, usage)
+      const symbol = currency === 'CNY' ? '¥' : '$'
       console.log(chalk.rgb(245, 242, 235)([
         '',
+        `  model:          ${config.model} (${providerKey})`,
         `  requests:       ${usage.requests}`,
         `  input tokens:   ${fmtK(usage.inputTokens)}` + (usage.cacheReadTokens ? chalk.dim(` (cache hit: ${fmtK(usage.cacheReadTokens)})`) : ''),
         `  output tokens:  ${fmtK(usage.outputTokens)}`,
         `  total tokens:   ${fmtK(totalTokens)}`,
-        `  est. cost:      ${totalCost.toFixed(4)}`,
+        `  est. cost:      ${symbol}${cost.toFixed(4)} ${currency}`,
         '',
       ].join('\n')))
       return true

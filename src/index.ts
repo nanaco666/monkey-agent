@@ -6,7 +6,9 @@ import { startRepl } from './core/repl.js'
 import { runSetup } from './setup.js'
 import { appendFileSync } from 'fs'
 import { homedir } from 'os'
-import { join } from 'path'
+import { join, dirname } from 'path'
+import { fileURLToPath } from 'url'
+import { readFileSync } from 'fs'
 
 const CRASH_LOG = join(homedir(), '.monkey-cli', 'crash.log')
 
@@ -80,5 +82,7 @@ if (args[0] === 'telegram' || args[0] === 'tg') {
   process.exit(0)
 }
 
-printBanner(config.model)
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const pkg = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'))
+printBanner(config.model, pkg.version)
 await startRepl(config)

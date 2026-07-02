@@ -14,6 +14,8 @@ import { buildMemoryContext } from '../memory/context.js'
 import { shouldCompact, compactMessages } from './compact.js'
 import { cleanSessionsOnly, selfClean } from '../memory/clean.js'
 import type { ContentBlock } from '../providers/index.js'
+import { detectProvider } from '../providers/index.js'
+import { calculateCost } from './pricing.js'
 
 const TELEGRAM_API = 'https://api.telegram.org/bot'
 
@@ -33,10 +35,19 @@ interface TgUpdate {
   }
 }
 
+interface TokenUsage {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  requests: number
+}
+
 interface TgSession {
   messages: Message[]
   memoryContext: string
   lastActive: number
+  usage: TokenUsage
 }
 
 export class TelegramBot {
@@ -133,6 +144,7 @@ export class TelegramBot {
         messages: [],
         memoryContext: '',
         lastActive: Date.now(),
+        usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, requests: 0 },
       })
     }
     const s = this.sessions.get(chatId)!
@@ -189,9 +201,20 @@ export class TelegramBot {
     }
     if (text === '/usage') {
       const session = this.getSession(chatId)
-      // Rough estimate from message count
-      const msgCount = session.messages.length
-      await this.sendMessage(chatId, `对话消息数: ${msgCount}\n当前模型: ${this.config.model}`)
+      const u = session.usage
+      const fmtK = (n: number) => n >= 1000 ? `${(n / 1000).toFixed(1)}K` : String(n)
+      const totalTokens = u.inputTokens + u.outputTokens
+      const providerKey = detectProvider(this.config.model)
+      const { cost, currency } = calculateCost(providerKey, this.config.model, u)
+      const symbol = currency === 'CNY' ? '\u00a5' : '$'
+      await this.sendMessage(chatId, [
+        `📊 *Usage (${this.config.model})*`,
+        `requests: ${u.requests}`,
+        `input: ${fmtK(u.inputTokens)}${u.cacheReadTokens ? ` (cache hit: ${fmtK(u.cacheReadTokens)})` : ''}`,
+        `output: ${fmtK(u.outputTokens)}`,
+        `total: ${fmtK(totalTokens)}`,
+        `cost: ${symbol}${cost.toFixed(4)} ${currency}`,
+      ].join('\n'))
       return
     }
     if (text === '/wild') {
@@ -324,7 +347,14 @@ export class TelegramBot {
           session.memoryContext,
         )
 
-        const { toolUses } = streamResult
+        const { toolUses, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens } = streamResult
+
+        // Track token usage
+        session.usage.inputTokens += inputTokens
+        session.usage.outputTokens += outputTokens
+        session.usage.cacheReadTokens += cacheReadTokens
+        session.usage.cacheCreationTokens += cacheCreationTokens
+        session.usage.requests++
 
         // Build assistant message blocks
         const assistantBlocks: any[] = []
@@ -397,6 +427,21 @@ export class TelegramBot {
       console.error('Failed to connect to Telegram:', me)
       process.exit(1)
     }
+
+    // Register bot commands menu
+    await this.api('setMyCommands', {
+      commands: [
+        { command: 'start', description: '打招呼' },
+        { command: 'clear', description: '清空对话' },
+        { command: 'model', description: '查看/切换模型' },
+        { command: 'usage', description: '查看用量' },
+        { command: 'update', description: '拉最新代码并重启' },
+        { command: 'clean', description: '自清洁：清理过期会话和记忆' },
+        { command: 'wild', description: '解锁危险命令 🐒' },
+        { command: 'tame', description: '恢复安全模式' },
+        { command: 'help', description: '查看帮助' },
+      ],
+    })
 
     console.log(`   Allowed users: ${this.allowedUsers.size > 0 ? [...this.allowedUsers].join(', ') : 'all'}`)
     console.log(`   Polling for updates...`)

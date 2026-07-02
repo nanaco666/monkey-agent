@@ -28,13 +28,14 @@ const BIG = [
   '╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═══╝╚═╝  ╚═╝╚══════╝   ╚═╝  ',
 ]
 
-export function printBanner(model: string, version = '0.1.0'): void {
+export function printBanner(model: string, version: string): void {
   console.log()
   BIG.forEach(line => console.log('  ' + colorLine(line)))
   console.log()
   console.log(
     '  ' + chalk.rgb(232, 98, 42)('the AI that evolves') +
     '    ' + chalk.rgb(245, 242, 235)(`v${version}`) +
+    '  ' + chalk.dim(new Date().toISOString().slice(0, 10)) +
     '  ' + chalk.rgb(107, 140, 78)('●') +
     ' ' + chalk.rgb(245, 242, 235)(model) +
     '    ' + chalk.rgb(240, 183, 49)(kaomoji.random())
