@@ -172,6 +172,57 @@ The app communicates with the Monkey CLI via a JSON-RPC protocol over stdio (`mo
 
 The app appears in `/Applications` and launches like any other macOS app.
 
+## 🪟 Windows App
+
+Monkey also runs on Windows via an Electron desktop app.
+
+### Prerequisites
+
+1. Install [Node.js 20+](https://nodejs.org/) and `monkey-cli` (same as above)
+2. Run `monkey` in terminal once to complete setup
+
+### Build Windows Installer
+
+From macOS (cross-compile):
+
+```bash
+cd monkey-cli
+npm run build
+./scripts/build-electron-win.sh
+```
+
+This produces an NSIS installer `.exe` in `MonkeyElectron/dist-electron/`.
+
+### Install & Run on Windows
+
+1. Copy the `.exe` installer to your Windows machine
+2. Run the installer — it will install Monkey to `Program Files`
+3. Launch **Monkey** from Start Menu or Desktop shortcut
+4. The app auto-detects your `monkey` CLI installation
+
+The Windows app uses the same JSON-RPC protocol as the macOS app — it spawns `monkey app` as a child process and communicates over stdio. All features work identically: streaming chat, tool execution, model switching, wild/tame mode, etc.
+
+### Architecture
+
+Both desktop apps share the same backend protocol:
+
+```
+┌─────────────────────┐
+│  Native GUI (SwiftUI│  ← macOS
+│  or Electron)       │  ← Windows
+│                     │
+│  JSON-RPC over stdio│
+└────────┬────────────┘
+         │
+┌────────▼────────────┐
+│  monkey app         │  ← Node.js CLI process
+│  (app-protocol.ts)  │
+│                     │
+│  All existing logic │
+│  LLM, tools, memory │
+└─────────────────────┘
+```
+
 ## 📱 Telegram Bot
 
 Run Monkey as an always-on Telegram bot:
@@ -235,10 +286,10 @@ No telemetry, no analytics, no phone-home. The open-source repo is a blank canva
 - [x] On-demand tool loading (context trimming)
 - [x] Kaomoji mood system
 - [x] macOS native app (SwiftUI)
+- [x] Windows app (Electron + NSIS installer)
 - [ ] Permission system (confirm before destructive actions)
 - [ ] Dream — background memory consolidation
 - [ ] Multi-agent coordinator
-- [ ] Web UI
 
 ## License
 

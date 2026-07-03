@@ -9,6 +9,10 @@ MonkeyApp/.build/
 MonkeyApp/.swiftpm/
 MonkeyApp/Packages/
 
+# Electron build artifacts
+MonkeyElectron/node_modules/
+MonkeyElectron/dist-electron/
+
 # Never commit personal data
 # ~/.monkey-cli/ lives outside this repo, but just in case:
 .monkey-cli/

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Monkey</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <span class="status-dot" id="statusDot"></span>
+        <div class="model-picker">
+          <button class="toolbar-btn" id="modelBtn">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 6l3.5 2-3.5 2V6z"/><path d="M0 4a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2 2H2a2 2 0 01-2-2V4zm1 0v8a1 1 0 001 1h12a1 1 0 001-1V4a1 1 0 00-1-1H2a1 1 0 00-1 1z"/></svg>
+            <span id="modelLabel">...</span>
+          </button>
+          <div class="dropdown" id="modelDropdown"></div>
+        </div>
+        <button class="toolbar-btn mode-btn" id="modeBtn">
+          <span id="modeIcon">🛡️</span>
+          <span id="modeLabel">Tame</span>
+        </button>
+      </div>
+      <div class="toolbar-right">
+        <span class="usage" id="usageLabel"></span>
+        <button class="toolbar-btn" id="slashBtn" title="Commands">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M3 0h2v16H3V0zm8 0h2v16h-2V0z"/></svg>
+        </button>
+        <div class="dropdown slash-dropdown" id="slashDropdown"></div>
+        <button class="toolbar-btn" id="clearBtn" title="Clear">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z"/><path d="M14.5 3a1 1 0 00-1-1H13V1.5a.5.5 0 00-1 0V2H4V1.5a.5.5 0 00-1 0V2h-.5a1 1 0 00-1 1v1h13V3zM2.5 14a1 1 0 001 1h9a1 1 0 001-1V5h-13v9z"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div class="messages" id="messages"></div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <textarea id="inputField" placeholder="Message Monkey…" rows="1"></textarea>
+      <button class="send-btn" id="sendBtn" title="Send">
+        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M10.293 3.293a1 1 0 011.414 0l6 6a1 1 0 010 1.414l-6 6a1 1 0 01-1.414-1.414L14.586 11H3a1 1 0 110-2h11.586l-4.293-4.293a1 1 0 010-1.414z"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
