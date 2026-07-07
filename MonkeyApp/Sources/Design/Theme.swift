@@ -1,14 +1,15 @@
 import SwiftUI
 
-// MARK: - Design System for Monkey macOS App
+// MARK: - Monkey Design System
 //
-// macOS 26 Liquid Glass design system.
-// Let the system handle materials, backgrounds, and colors where possible.
-// Keep semantic tokens only for app-specific branding.
+// Warm parchment/mahogany palette as the content base.
+// Liquid Glass elements float above, refracting the warm colors underneath.
+// This is the intended macOS 26 look: rich content + translucent controls.
 
 enum Theme {
     // MARK: - Spacing (4px grid)
     enum Spacing {
+        static let px: CGFloat = 1
         static let xs: CGFloat = 2
         static let sm: CGFloat = 4
         static let md: CGFloat = 8
@@ -20,10 +21,12 @@ enum Theme {
 
     // MARK: - Radius
     enum Radius {
-        static let sm: CGFloat = 6
-        static let md: CGFloat = 8
-        static let lg: CGFloat = 10
-        static let xl: CGFloat = 14
+        static let base: CGFloat = 10
+        static let sm: CGFloat = base * 0.6
+        static let md: CGFloat = base * 0.8
+        static let lg: CGFloat = base
+        static let xl: CGFloat = base * 1.4
+        static let xxl: CGFloat = base * 1.8
         static let pill: CGFloat = 100
     }
 
@@ -52,5 +55,106 @@ enum Theme {
         static let fade = SwiftUI.Animation.easeInOut(duration: 0.15)
         static let spring = SwiftUI.Animation.spring(response: 0.3, dampingFraction: 0.8)
         static let streamingCursor = SwiftUI.Animation.easeInOut(duration: 0.6).repeatForever(autoreverses: true)
+    }
+
+    // MARK: - Colors namespace
+    enum Colors { }
+}
+
+// MARK: - Color Token
+
+/// A semantic color that resolves for light/dark mode.
+/// Both modes share the warm parchment palette — this app is always warm.
+struct ColorToken {
+    let light: SwiftUI.Color
+    let dark: SwiftUI.Color
+
+    func resolve(for scheme: ColorScheme) -> SwiftUI.Color {
+        scheme == .dark ? dark : light
+    }
+}
+
+// MARK: - Semantic Colors (warm parchment / mahogany palette)
+
+extension Theme.Colors {
+    // --background / --foreground
+    static let background = ColorToken(light: Color(hex: "DFDBC4"), dark: Color(hex: "DFDBC4"))
+    static let foreground = ColorToken(light: Color(hex: "4B2D2B"), dark: Color(hex: "4B2D2B"))
+
+    // --card / --card-foreground
+    static let card = ColorToken(light: Color(hex: "E3DEC5"), dark: Color(hex: "E3DEC5"))
+    static let cardForeground = ColorToken(light: Color(hex: "4B2D2B"), dark: Color(hex: "4B2D2B"))
+
+    // --popover / --popover-foreground
+    static let popover = ColorToken(light: Color(hex: "E3DEC5"), dark: Color(hex: "E3DEC5"))
+    static let popoverForeground = ColorToken(light: Color(hex: "4B2D2B"), dark: Color(hex: "4B2D2B"))
+
+    // --primary / --primary-foreground
+    static let primary = ColorToken(light: Color(hex: "4B2D2B"), dark: Color(hex: "4B2D2B"))
+    static let primaryForeground = ColorToken(light: Color(hex: "E8E3CB"), dark: Color(hex: "E8E3CB"))
+
+    // --secondary / --secondary-foreground
+    static let secondary = ColorToken(light: Color(hex: "E3DEC5"), dark: Color(hex: "E3DEC5"))
+    static let secondaryForeground = ColorToken(light: Color(hex: "4B2D2B"), dark: Color(hex: "4B2D2B"))
+
+    // --muted / --muted-foreground
+    static let muted = ColorToken(light: Color(hex: "D5CFB8"), dark: Color(hex: "D5CFB8"))
+    static let mutedForeground = ColorToken(light: Color(hex: "8F7E72"), dark: Color(hex: "8F7E72"))
+
+    // --accent / --accent-foreground
+    static let accent = ColorToken(light: Color(hex: "D5CFB8"), dark: Color(hex: "D5CFB8"))
+    static let accentForeground = ColorToken(light: Color(hex: "4B2D2B"), dark: Color(hex: "4B2D2B"))
+
+    // --destructive
+    static let destructive = ColorToken(light: Color(hex: "A03030"), dark: Color(hex: "A03030"))
+    static let destructiveForeground = ColorToken(light: Color(hex: "E8E3CB"), dark: Color(hex: "E8E3CB"))
+
+    // --border
+    static let border = ColorToken(light: Color(hex: "5A3835"), dark: Color(hex: "5A3835"))
+
+    // --input
+    static let input = ColorToken(light: Color(hex: "8B7A6E"), dark: Color(hex: "8B7A6E"))
+
+    // --ring
+    static let ring = ColorToken(light: Color(hex: "4B2D2B"), dark: Color(hex: "4B2D2B"))
+
+    // App-specific semantic tokens
+    static let userBubble = ColorToken(light: Color(hex: "4B2D2B"), dark: Color(hex: "4B2D2B"))
+    static let userBubbleForeground = ColorToken(light: Color(hex: "E8E3CB"), dark: Color(hex: "E8E3CB"))
+    static let assistantAccent = ColorToken(light: Color(hex: "5A3835"), dark: Color(hex: "5A3835"))
+    static let toolAccent = ColorToken(light: Color(hex: "7A6350"), dark: Color(hex: "7A6350"))
+    static let systemAccent = ColorToken(light: Color(hex: "6B5040"), dark: Color(hex: "6B5040"))
+    static let success = ColorToken(light: Color(hex: "5E7A50"), dark: Color(hex: "5E7A50"))
+    static let warning = ColorToken(light: Color(hex: "8B6A3E"), dark: Color(hex: "8B6A3E"))
+    static let error = ColorToken(light: Color(hex: "A03030"), dark: Color(hex: "A03030"))
+
+    // Code block
+    static let codeBackground = ColorToken(light: Color(hex: "E3DEC5"), dark: Color(hex: "E3DEC5"))
+    static let codeHeaderBackground = ColorToken(light: Color(hex: "D5CFB8"), dark: Color(hex: "D5CFB8"))
+}
+
+// MARK: - Color hex convenience
+
+extension Color {
+    init(hex: String) {
+        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
+        var int: UInt64 = 0
+        Scanner(string: hex).scanHexInt64(&int)
+        let a, r, g, b: UInt64
+        switch hex.count {
+        case 6:
+            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
+        case 8:
+            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
+        default:
+            (a, r, g, b) = (255, 0, 0, 0)
+        }
+        self.init(
+            .sRGB,
+            red: Double(r) / 255,
+            green: Double(g) / 255,
+            blue: Double(b) / 255,
+            opacity: Double(a) / 255
+        )
     }
 }

@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Top toolbar: connection status, model picker, mode toggle, usage, commands.
-/// Uses native macOS 26 glass button styles.
+/// Top toolbar: warm background with Liquid Glass controls floating above.
 struct ToolbarView: View {
     let store: ChatStore
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: 8) {
@@ -21,7 +21,7 @@ struct ToolbarView: View {
             if store.usage.requests > 0 {
                 Text(store.usage.summary)
                     .font(Theme.Font.xs)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
             }
 
             commandsMenu
@@ -30,6 +30,7 @@ struct ToolbarView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+        .background(Theme.Colors.card.resolve(for: colorScheme))
     }
 
     private var modelPicker: some View {

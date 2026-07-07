@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// Syntax-highlighted code block with language label and copy button
+/// Syntax-highlighted code block with warm background and glass border.
 struct CodeBlockView: View {
     let code: String
     let language: String?
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -12,12 +13,13 @@ struct CodeBlockView: View {
                     Text(lang)
                         .font(Theme.Font.xs)
                         .fontWeight(.medium)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
                     Spacer()
                     CopyButton(text: code)
                 }
                 .padding(.horizontal, Theme.Spacing.md)
                 .padding(.vertical, 5)
+                .background(Theme.Colors.codeHeaderBackground.resolve(for: colorScheme))
             } else {
                 HStack {
                     Spacer()
@@ -36,16 +38,19 @@ struct CodeBlockView: View {
                     .padding(Theme.Spacing.md)
             }
         }
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .background(Theme.Colors.codeBackground.resolve(for: colorScheme))
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(Theme.Colors.border.resolve(for: colorScheme), lineWidth: 0.5)
+        )
     }
 
-    /// Simple syntax highlighting via AttributedString
     private var highlightedCode: AttributedString {
         var attr = AttributedString(code)
-        attr.foregroundColor = .secondary
+        attr.foregroundColor = Theme.Colors.foreground.resolve(for: colorScheme)
 
-        // Keywords
-        let keywordColor = Color.orange
+        let keywordColor = Color(hex: "C86420")
         let keywords = ["func", "class", "struct", "enum", "protocol", "extension",
                         "var", "let", "const", "if", "else", "for", "while", "return",
                         "import", "export", "from", "async", "await", "try", "catch",
@@ -66,8 +71,7 @@ struct CodeBlockView: View {
             }
         }
 
-        // Strings
-        let stringColor = Color.green
+        let stringColor = Color(hex: "5E7A50")
         for pattern in ["\"[^\"\\\\]*(\\\\.[^\"\\\\]*)*\"", "'[^'\\\\]*(\\\\.[^'\\\\]*)*'"] {
             if let regex = try? NSRegularExpression(pattern: pattern) {
                 let nsRange = NSRange(code.startIndex..., in: code)
@@ -80,8 +84,7 @@ struct CodeBlockView: View {
             }
         }
 
-        // Comments
-        let commentColor = Color.gray
+        let commentColor = Color(hex: "8F7E72")
         for pattern in ["//.*$", "#[^\\n]*$"] {
             if let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) {
                 let nsRange = NSRange(code.startIndex..., in: code)
@@ -94,8 +97,7 @@ struct CodeBlockView: View {
             }
         }
 
-        // Numbers
-        let numberColor = Color.blue
+        let numberColor = Color(hex: "5A3835")
         if let regex = try? NSRegularExpression(pattern: "\\b\\d+(\\.\\d+)?\\b") {
             let nsRange = NSRange(code.startIndex..., in: code)
             for match in regex.matches(in: code, range: nsRange) {

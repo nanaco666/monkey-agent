@@ -4,6 +4,7 @@ import SwiftUI
 struct ShadSpinner: View {
     var size: CGFloat = 16
     var color: SwiftUI.Color? = nil
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var isAnimating = false
 
@@ -11,7 +12,7 @@ struct ShadSpinner: View {
         Circle()
             .trim(from: 0, to: 0.7)
             .stroke(
-                color ?? .secondary,
+                color ?? Theme.Colors.mutedForeground.resolve(for: colorScheme),
                 style: StrokeStyle(lineWidth: 2, lineCap: .round)
             )
             .frame(width: size, height: size)
@@ -24,11 +25,12 @@ struct ShadSpinner: View {
     }
 }
 
-/// Tooltip (hover)
+/// Tooltip (hover) with warm palette
 struct ShadTooltip<Content: View, Label: View>: View {
     let content: Content
     let label: Label
     var placement: Edge = .top
+    @Environment(\.colorScheme) private var colorScheme
 
     init(placement: Edge = .top, @ViewBuilder content: () -> Content, @ViewBuilder label: () -> Label) {
         self.placement = placement
@@ -47,7 +49,10 @@ struct ShadTooltip<Content: View, Label: View>: View {
                         .font(Theme.Font.xs)
                         .padding(.horizontal, 8)
                         .padding(.vertical, 4)
-                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .background(Theme.Colors.popover.resolve(for: colorScheme))
+                        .foregroundStyle(Theme.Colors.popoverForeground.resolve(for: colorScheme))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
                         .offset(y: placement == .top ? -36 : (placement == .bottom ? 36 : 0))
                         .offset(x: placement == .leading ? -60 : (placement == .trailing ? 60 : 0))
                         .transition(.opacity)
@@ -66,11 +71,12 @@ struct ShadTooltip<Content: View, Label: View>: View {
     }
 }
 
-/// Empty State
+/// Empty State with warm palette
 struct ShadEmpty: View {
     let icon: String
     let title: String
     let description: String
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: Theme.Spacing.lg) {
@@ -79,10 +85,11 @@ struct ShadEmpty: View {
 
             Text(title)
                 .font(Theme.Font.title)
+                .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
 
             Text(description)
                 .font(Theme.Font.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 280)
         }
@@ -93,6 +100,7 @@ struct ShadEmpty: View {
 /// Welcome State (empty chat, branded)
 struct WelcomeView: View {
     let assistantName: String
+    @Environment(\.colorScheme) private var colorScheme
 
     private let asciiArt = [
         "███╗   ███╗ ██████╗ ███╗   ██╗██╗  ██╗███████╗██╗   ██╗",
@@ -153,11 +161,11 @@ struct WelcomeView: View {
 
                 Text("v0.2.0")
                     .font(Theme.Font.sm)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
 
                 Text(Date.now, format: .dateTime.year().month().day())
                     .font(Theme.Font.sm)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
 
                 Text(kaomojis.randomElement() ?? "⊂((・▽・))⊃")
                     .font(Theme.Font.sm)
@@ -166,7 +174,7 @@ struct WelcomeView: View {
 
             Text(assistantName)
                 .font(Theme.Font.sm)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
 
             Spacer()
         }
@@ -196,7 +204,7 @@ struct WelcomeView: View {
     private func buildSpans(for chars: [Character]) -> [ColoredSpan] {
         var spans: [ColoredSpan] = []
         var currentText = ""
-        var currentColor: SwiftUI.Color = .primary
+        var currentColor: SwiftUI.Color = Theme.Colors.foreground.resolve(for: colorScheme)
 
         for (i, ch) in chars.enumerated() {
             let col = colBounds.enumerated().first { _, bounds in i >= bounds.start && i <= bounds.end }
@@ -204,7 +212,7 @@ struct WelcomeView: View {
             if let col = col {
                 color = columnColors[col.offset]
             } else {
-                color = .primary
+                color = Theme.Colors.foreground.resolve(for: colorScheme)
             }
 
             if color == currentColor {
@@ -224,9 +232,10 @@ struct WelcomeView: View {
     }
 }
 
-/// Keyboard shortcut display
+/// Keyboard shortcut display with warm palette
 struct ShadKbd: View {
     let text: String
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Text(text)
@@ -234,6 +243,12 @@ struct ShadKbd: View {
             .fontWeight(.medium)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .glassEffect(.clear, in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .background(Theme.Colors.muted.resolve(for: colorScheme))
+            .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .overlay(
+                RoundedRectangle(cornerRadius: Theme.Radius.sm)
+                    .strokeBorder(Theme.Colors.border.resolve(for: colorScheme), lineWidth: 0.5)
+            )
     }
 }

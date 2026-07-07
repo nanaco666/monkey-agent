@@ -4,6 +4,7 @@ import SwiftUI
 struct StatusDot: View {
     let isConnected: Bool
     var size: CGFloat = 8
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var isPulsing = false
 
@@ -11,7 +12,7 @@ struct StatusDot: View {
         ZStack {
             if isConnected {
                 Circle()
-                    .fill(Color.green.opacity(0.3))
+                    .fill(Theme.Colors.success.resolve(for: colorScheme).opacity(0.3))
                     .frame(width: size * 2, height: size * 2)
                     .scaleEffect(isPulsing ? 1.2 : 1.0)
                     .opacity(isPulsing ? 0 : 0.6)
@@ -23,7 +24,7 @@ struct StatusDot: View {
             }
 
             Circle()
-                .fill(isConnected ? Color.green : Color.orange)
+                .fill(isConnected ? Theme.Colors.success.resolve(for: colorScheme) : Theme.Colors.warning.resolve(for: colorScheme))
                 .frame(width: size, height: size)
         }
     }

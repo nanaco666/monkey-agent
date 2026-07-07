@@ -1,10 +1,10 @@
 import SwiftUI
 
 /// Markdown renderer using AttributedString with code block support.
-/// On macOS 26, uses the richer AttributedString markdown rendering.
 struct MarkdownRenderer: View {
     let content: String
     var isStreaming: Bool = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         let segments = ContentParser.parse(content)
@@ -12,7 +12,7 @@ struct MarkdownRenderer: View {
             ForEach(Array(segments.enumerated()), id: \.offset) { _, seg in
                 switch seg {
                 case .text(let text):
-                    AttributedTextView(text: text)
+                    AttributedTextView(text: text, colorScheme: colorScheme)
                 case .code(let code, let lang):
                     CodeBlockView(code: code, language: lang)
                 }
@@ -27,17 +27,19 @@ struct MarkdownRenderer: View {
 
 private struct AttributedTextView: View {
     let text: String
+    let colorScheme: ColorScheme
 
     var body: some View {
-        // macOS 26: full markdown parsing with inline styles
         if let attributed = try? AttributedString(
             markdown: text,
             options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         ) {
             Text(attributed)
+                .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
                 .textSelection(.enabled)
         } else {
             Text(text)
+                .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
                 .textSelection(.enabled)
         }
     }

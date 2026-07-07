@@ -4,6 +4,7 @@ import SwiftUI
 struct CopyButton: View {
     let text: String
     @State private var copied = false
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         ShadButton(icon: copied ? "checkmark" : "doc.on.doc", variant: .ghost, size: .iconXs) {
@@ -14,6 +15,6 @@ struct CopyButton: View {
                 copied = false
             }
         }
-        .foregroundStyle(copied ? .green : .secondary)
+        .foregroundStyle(copied ? Theme.Colors.success.resolve(for: colorScheme) : Theme.Colors.mutedForeground.resolve(for: colorScheme))
     }
 }

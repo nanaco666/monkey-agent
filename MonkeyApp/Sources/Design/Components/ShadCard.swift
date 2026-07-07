@@ -1,31 +1,48 @@
 import SwiftUI
 
-/// Card using Liquid Glass on macOS 26.
+/// Card using warm background with optional glass overlay.
 struct ShadCard<Content: View>: View {
     let content: Content
     var padding: CGFloat = Theme.Spacing.lg
+    var showBorder: Bool = true
+    @Environment(\.colorScheme) private var colorScheme
 
-    init(padding: CGFloat = Theme.Spacing.lg, @ViewBuilder content: () -> Content) {
+    init(padding: CGFloat = Theme.Spacing.lg, showBorder: Bool = true, @ViewBuilder content: () -> Content) {
         self.padding = padding
+        self.showBorder = showBorder
         self.content = content()
     }
 
     var body: some View {
         content
             .padding(padding)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.Radius.lg))
+            .background(Theme.Colors.card.resolve(for: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
+            .overlay(
+                Group {
+                    if showBorder {
+                        RoundedRectangle(cornerRadius: Theme.Radius.lg)
+                            .strokeBorder(Theme.Colors.border.resolve(for: colorScheme), lineWidth: 0.5)
+                    }
+                }
+            )
     }
 }
 
 /// Separator
 struct ShadSeparator: View {
     var orientation: Axis = .horizontal
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         if orientation == .horizontal {
-            Divider()
+            Rectangle()
+                .fill(Theme.Colors.border.resolve(for: colorScheme))
+                .frame(height: 0.5)
         } else {
-            Divider()
+            Rectangle()
+                .fill(Theme.Colors.border.resolve(for: colorScheme))
+                .frame(width: 0.5)
         }
     }
 }
@@ -33,10 +50,11 @@ struct ShadSeparator: View {
 /// Skeleton loading placeholder
 struct ShadSkeleton: View {
     var cornerRadius: CGFloat = Theme.Radius.md
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Rectangle()
-            .fill(.quaternary)
+            .fill(Theme.Colors.muted.resolve(for: colorScheme))
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             .shimmer()
     }

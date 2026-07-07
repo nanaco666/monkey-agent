@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// File/image attachment card using Liquid Glass.
+/// File/image attachment card with warm palette and glass overlay.
 struct AttachmentCard: View {
     let attachment: MessageAttachment
     var onRemove: (() -> Void)? = nil
     var onOpen: (() -> Void)? = nil
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         HStack(spacing: Theme.Spacing.md) {
@@ -14,7 +15,12 @@ struct AttachmentCard: View {
         }
         .padding(.horizontal, Theme.Spacing.md)
         .padding(.vertical, 6)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .background(cardBackground)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.Radius.md)
+                .strokeBorder(borderColor, lineWidth: 0.5)
+        )
         .overlay(shimmerOverlay)
     }
 
@@ -36,7 +42,8 @@ struct AttachmentCard: View {
             .font(.title3)
             .foregroundStyle(fileIconColor)
             .frame(width: 40, height: 40)
-            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.Radius.sm))
+            .background(Theme.Colors.muted.resolve(for: colorScheme))
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.sm))
     }
 
     private var contentSlot: some View {
@@ -49,7 +56,7 @@ struct AttachmentCard: View {
 
             Text(descriptionText)
                 .font(Theme.Font.xs)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
                 .lineLimit(1)
         }
     }
@@ -63,11 +70,25 @@ struct AttachmentCard: View {
         }
     }
 
+    private var cardBackground: SwiftUI.Color {
+        switch attachment.state {
+        case .error: return Theme.Colors.destructive.resolve(for: colorScheme).opacity(0.04)
+        default:     return Theme.Colors.card.resolve(for: colorScheme)
+        }
+    }
+
+    private var borderColor: SwiftUI.Color {
+        switch attachment.state {
+        case .error: return Theme.Colors.destructive.resolve(for: colorScheme).opacity(0.2)
+        default:     return Theme.Colors.border.resolve(for: colorScheme)
+        }
+    }
+
     private var titleColor: SwiftUI.Color {
         switch attachment.state {
-        case .uploading, .processing: return .secondary
-        case .error:                  return .red
-        default:                      return .primary
+        case .uploading, .processing: return Theme.Colors.mutedForeground.resolve(for: colorScheme)
+        case .error:                  return Theme.Colors.destructive.resolve(for: colorScheme)
+        default:                      return Theme.Colors.foreground.resolve(for: colorScheme)
         }
     }
 
@@ -128,7 +149,7 @@ struct AttachmentCard: View {
         case "TS", "TSX", "JS", "JSX": return .yellow
         case "SWIFT":     return .orange
         case "PY":        return .blue
-        default:          return .secondary
+        default:          return Theme.Colors.mutedForeground.resolve(for: colorScheme)
         }
     }
 }

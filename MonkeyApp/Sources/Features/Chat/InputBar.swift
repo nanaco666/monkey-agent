@@ -1,11 +1,12 @@
 import SwiftUI
 
-/// Input bar with Liquid Glass send/stop button and auto-expanding text field.
+/// Input bar: Liquid Glass capsule floating above warm background.
 struct InputBar: View {
     let store: ChatStore
     let scrollState: ChatScrollState
     @State private var inputText = ""
     @FocusState private var inputFocused: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,6 +15,7 @@ struct InputBar: View {
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .font(Theme.Font.body)
+                    .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
                     .focused($inputFocused)
                     .onSubmit { send() }
                     .padding(.leading, 16)
@@ -51,11 +53,13 @@ struct InputBar: View {
             Button(action: { send() }) {
                 Image(systemName: "arrow.up")
                     .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.Colors.primaryForeground.resolve(for: colorScheme))
                     .frame(width: 28, height: 28)
             }
             .buttonStyle(.glassProminent)
-            .tint(canSend ? nil : .gray)
+            .tint(Theme.Colors.primary.resolve(for: colorScheme))
             .disabled(!canSend)
+            .opacity(canSend ? 1 : 0.5)
             .animation(Theme.Animation.spring, value: canSend)
         }
     }

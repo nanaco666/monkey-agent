@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Input field — replaced by native glass input where possible.
-/// Kept as a fallback for standalone text fields.
+/// Input field with warm palette and glass overlay.
 struct ShadInput: View {
     let placeholder: String
     @Binding var text: String
     var axis: Axis = .horizontal
     var onCommit: (() -> Void)? = nil
+    @Environment(\.colorScheme) private var colorScheme
 
     @FocusState private var isFocused: Bool
 
@@ -17,6 +17,7 @@ struct ShadInput: View {
                     .textFieldStyle(.plain)
                     .lineLimit(1...8)
                     .font(Theme.Font.body)
+                    .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .focused($isFocused)
@@ -25,6 +26,7 @@ struct ShadInput: View {
                 TextField(placeholder, text: $text)
                     .textFieldStyle(.plain)
                     .font(Theme.Font.body)
+                    .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
                     .focused($isFocused)

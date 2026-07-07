@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// A single message in a conversation, using Liquid Glass for badges and system messages.
+/// A single message: warm palette for content, Liquid Glass for badges/pills.
 struct MessageRow: View {
     let message: ChatMessage
     let showAvatar: Bool
     let isGrouped: Bool
+    @Environment(\.colorScheme) private var colorScheme
 
     init(message: ChatMessage, showAvatar: Bool = true, isGrouped: Bool = false) {
         self.message = message
@@ -21,7 +22,7 @@ struct MessageRow: View {
         }
     }
 
-    // MARK: - User Message (right-aligned bubble)
+    // MARK: - User Message (mahogany bubble)
 
     private var userMessage: some View {
         HStack {
@@ -36,18 +37,18 @@ struct MessageRow: View {
                 if !message.content.isEmpty {
                     Text(message.content)
                         .font(Theme.Font.body)
-                        .foregroundStyle(Color.white)
+                        .foregroundStyle(Theme.Colors.userBubbleForeground.resolve(for: colorScheme))
                         .textSelection(.enabled)
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
-                        .background(Color.accentColor)
+                        .background(Theme.Colors.userBubble.resolve(for: colorScheme))
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
                 }
 
                 if !isGrouped, let time = message.timestamp {
                     Text(time, style: .time)
                         .font(Theme.Font.xs)
-                        .foregroundStyle(.tertiary)
+                        .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
                 }
             }
         }
@@ -81,7 +82,7 @@ struct MessageRow: View {
                     Text(message.role.displayName)
                         .font(Theme.Font.sm)
                         .fontWeight(.semibold)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.assistantAccent.resolve(for: colorScheme))
                 }
 
                 if !message.attachments.isEmpty {
@@ -97,7 +98,7 @@ struct MessageRow: View {
                     HStack(spacing: 6) {
                         Text(time, style: .time)
                             .font(Theme.Font.xs)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
 
                         if !message.isStreaming && !message.content.isEmpty {
                             CopyButton(text: message.content)
@@ -112,7 +113,7 @@ struct MessageRow: View {
         .padding(.vertical, isGrouped ? 2 : 6)
     }
 
-    // MARK: - Tool Message (glass badge style)
+    // MARK: - Tool Message (glass badge)
 
     @State private var shimmerOffset: CGFloat = -100
 
@@ -124,7 +125,7 @@ struct MessageRow: View {
                 if message.isStreaming {
                     Image(systemName: "gearshape.fill")
                         .font(Theme.Font.xs)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.toolAccent.resolve(for: colorScheme))
                         .rotationEffect(.degrees(shimmerOffset * 3.6))
                         .onAppear {
                             withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
@@ -134,13 +135,14 @@ struct MessageRow: View {
                 } else {
                     Image(systemName: "checkmark.circle.fill")
                         .font(Theme.Font.xs)
-                        .foregroundStyle(.green)
+                        .foregroundStyle(Theme.Colors.success.resolve(for: colorScheme))
                 }
 
                 if let name = message.toolName {
                     Text(name)
                         .font(Theme.Font.xs)
                         .fontWeight(.medium)
+                        .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
                         .padding(.horizontal, 8)
                         .padding(.vertical, 3)
                         .glassEffect(.clear, in: .capsule)
@@ -149,7 +151,7 @@ struct MessageRow: View {
                 if let summary = message.toolSummary, !summary.isEmpty {
                     Text(summary)
                         .font(Theme.Font.sm)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
                         .lineLimit(1)
                         .shimmer()
                         .opacity(message.isStreaming ? 1 : 0.7)
@@ -158,7 +160,7 @@ struct MessageRow: View {
                 if !message.content.isEmpty, message.content.hasPrefix("Error:") {
                     Text(message.content)
                         .font(Theme.Font.xs)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(Theme.Colors.error.resolve(for: colorScheme))
                         .lineLimit(1)
                 }
             }
@@ -177,7 +179,7 @@ struct MessageRow: View {
             Spacer()
             Text(message.content)
                 .font(Theme.Font.sm)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 6)
                 .glassEffect(.clear, in: .capsule)

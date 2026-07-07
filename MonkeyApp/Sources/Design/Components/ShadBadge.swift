@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Badge using Liquid Glass on macOS 26.
+/// Badge using Liquid Glass on macOS 26, with warm palette tints.
 struct ShadBadge: View {
     let text: String
     var icon: String? = nil
     var variant: Variant = .default
+    @Environment(\.colorScheme) private var colorScheme
 
     enum Variant {
         case `default`
@@ -25,6 +26,7 @@ struct ShadBadge: View {
                 .lineLimit(1)
                 .font(Theme.Font.xs)
                 .fontWeight(.medium)
+                .foregroundStyle(foreground)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
@@ -32,14 +34,25 @@ struct ShadBadge: View {
         .tint(tintColor)
     }
 
-    private var tintColor: Color? {
+    private var foreground: SwiftUI.Color {
+        switch variant {
+        case .default:     return Theme.Colors.foreground.resolve(for: colorScheme)
+        case .secondary:   return Theme.Colors.mutedForeground.resolve(for: colorScheme)
+        case .outline:     return Theme.Colors.foreground.resolve(for: colorScheme)
+        case .destructive: return Theme.Colors.destructive.resolve(for: colorScheme)
+        case .success:     return Theme.Colors.success.resolve(for: colorScheme)
+        case .warning:     return Theme.Colors.warning.resolve(for: colorScheme)
+        }
+    }
+
+    private var tintColor: SwiftUI.Color? {
         switch variant {
         case .default:     return nil
-        case .secondary:   return .gray
+        case .secondary:   return nil
         case .outline:     return nil
-        case .destructive: return .red
-        case .success:     return .green
-        case .warning:     return .orange
+        case .destructive: return Theme.Colors.destructive.resolve(for: colorScheme)
+        case .success:     return Theme.Colors.success.resolve(for: colorScheme)
+        case .warning:     return Theme.Colors.warning.resolve(for: colorScheme)
         }
     }
 }
