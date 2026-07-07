@@ -1,9 +1,9 @@
-// swift-tools-version: 6.0
+// swift-tools-version: 6.2
 import PackageDescription
 
 let package = Package(
     name: "MonkeyApp",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     products: [
         .executable(name: "MonkeyApp", targets: ["MonkeyApp"]),
     ],
@@ -11,7 +11,6 @@ let package = Package(
         .executableTarget(
             name: "MonkeyApp",
             path: "Sources",
-            // Exclude old files during migration (can be deleted later)
             exclude: [],
             resources: [
                 .process("../Resources")

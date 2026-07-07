@@ -11,7 +11,7 @@ struct StatusDot: View {
         ZStack {
             if isConnected {
                 Circle()
-                    .fill(Theme.Colors.success.resolve(for: .dark).opacity(0.3))
+                    .fill(Color.green.opacity(0.3))
                     .frame(width: size * 2, height: size * 2)
                     .scaleEffect(isPulsing ? 1.2 : 1.0)
                     .opacity(isPulsing ? 0 : 0.6)
@@ -23,7 +23,7 @@ struct StatusDot: View {
             }
 
             Circle()
-                .fill(isConnected ? Theme.Colors.success.resolve(for: .dark) : Theme.Colors.warning.resolve(for: .dark))
+                .fill(isConnected ? Color.green : Color.orange)
                 .frame(width: size, height: size)
         }
     }

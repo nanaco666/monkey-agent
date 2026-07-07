@@ -3,7 +3,6 @@ import SwiftUI
 struct SettingsView: View {
     let store: ChatStore
     @AppStorage("monkeyModel") private var selectedModel = "claude-sonnet-4-6"
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         TabView {
@@ -14,14 +13,12 @@ struct SettingsView: View {
                 .tabItem { Label("About", systemImage: "info.circle") }
         }
         .frame(width: 400, height: 280)
-        .background(Theme.Colors.background.resolve(for: colorScheme))
     }
 }
 
 private struct GeneralSettingsTab: View {
     let store: ChatStore
     @Binding var selectedModel: String
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         Form {
@@ -40,23 +37,21 @@ private struct GeneralSettingsTab: View {
             ))
 
             LabeledContent("Status") {
-                HStack(spacing: Theme.Spacing.sm) {
+                HStack(spacing: 4) {
                     StatusDot(isConnected: store.isConnected)
                     Text(store.isConnected ? "Connected" : "Connecting…")
                         .font(Theme.Font.sm)
-                        .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                        .foregroundStyle(.secondary)
                 }
             }
         }
-        .padding(Theme.Spacing.xxl)
+        .padding(20)
     }
 }
 
 private struct AboutTab: View {
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
-        VStack(spacing: Theme.Spacing.xl) {
+        VStack(spacing: 16) {
             Image("monkey_avatar", bundle: .module)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
@@ -65,23 +60,21 @@ private struct AboutTab: View {
 
             Text("Monkey")
                 .font(Theme.Font.title)
-                .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
 
             Text("The AI assistant that evolves")
-                .font(Theme.Font.body)
-                .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                .foregroundStyle(.secondary)
 
             Text("macOS native client")
                 .font(Theme.Font.xs)
-                .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                .foregroundStyle(.tertiary)
 
-            ShadSeparator()
+            Divider()
                 .frame(width: 200)
 
             Text("Pure local. Your data stays on your Mac.")
                 .font(Theme.Font.xs)
-                .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                .foregroundStyle(.secondary)
         }
-        .padding(Theme.Spacing.xxl)
+        .padding(24)
     }
 }

@@ -15,21 +15,30 @@ final class ChatStore: @unchecked Sendable {
     var isConnected = false
 
     // MARK: - Dependencies
-    private let transport: StdioTransport
-    private let processManager: MonkeyProcess
+    private let transport: UnixSocketTransport
     private var nextRequestId = 1
     private var activeChatRequestIds: Set<Int> = []
     private var pendingInitId: Int? = nil
 
     // MARK: - Init
 
-    init(transport: StdioTransport = StdioTransport(), processManager: MonkeyProcess = MonkeyProcess()) {
+    init(transport: UnixSocketTransport = UnixSocketTransport()) {
         self.transport = transport
-        self.processManager = processManager
 
-        self.transport.onReceive = { [weak self] message in
+        transport.onReceive = { [weak self] message in
+            Task { @MainActor in self?.handleMessage(message) }
+        }
+        transport.onConnect = { [weak self] in
             Task { @MainActor in
-                self?.handleMessage(message)
+                guard let self else { return }
+                let id = self.sendRequest("initialize", params: [:])
+                self.pendingInitId = id
+            }
+        }
+        transport.onDisconnect = { [weak self] in
+            Task { @MainActor in
+                self?.isConnected = false
+                self?.isStreaming = false
             }
         }
     }
@@ -37,24 +46,40 @@ final class ChatStore: @unchecked Sendable {
     // MARK: - Lifecycle
 
     func start() {
-        let cliPath = MonkeyProcess.findCliPath()
-        guard let handles = processManager.start(cliPath: cliPath) else {
-            appendSystemMessage("Error: Could not start Monkey process")
-            return
-        }
-        transport.setInputHandle(handles.writeHandle)
-        transport.setOutputSource(handles.readHandle)
-
-        let initId = sendRequest("initialize", params: [:])
-        pendingInitId = initId
+        launchDaemonIfNeeded()
+        transport.connect()
     }
 
     func stop() {
-        sendNotification("shutdown", params: [:])
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            self?.processManager.terminate()
-            self?.isConnected = false
+        transport.disconnect()
+        isConnected = false
+    }
+
+    // MARK: - Daemon launcher
+
+    private func launchDaemonIfNeeded() {
+        let cliPath = findCliPath()
+        guard !cliPath.isEmpty else { return }
+
+        // Spawn `node <cli> daemon` detached — daemon manages its own lifecycle.
+        // The daemon itself exits immediately if another instance is already running.
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        task.arguments = ["node", cliPath, "daemon"]
+        task.standardOutput = FileHandle.nullDevice
+        task.standardError = FileHandle.nullDevice
+        task.qualityOfService = .background
+        try? task.run()
+        // Do not call waitUntilExit — let it run in background
+    }
+
+    private func findCliPath() -> String {
+        let local = NSHomeDirectory() + "/monkey-cli/dist/index.js"
+        if FileManager.default.fileExists(atPath: local) { return local }
+        for path in ["/opt/homebrew/bin/monkey", "/usr/local/bin/monkey"] {
+            if FileManager.default.fileExists(atPath: path) { return path }
         }
+        return ""
     }
 
     // MARK: - Public Actions

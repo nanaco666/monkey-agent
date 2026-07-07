@@ -6,7 +6,6 @@ struct MessageListView: View {
     let messages: [ChatMessage]
     let scrollState: ChatScrollState
     var assistantName: String = "Monkey"
-    @Environment(\.colorScheme) private var colorScheme
 
     private var grouped: [(message: ChatMessage, showAvatar: Bool, isGrouped: Bool)] {
         MessageGroupBuilder.group(messages)
@@ -31,7 +30,7 @@ struct MessageListView: View {
                 }
             ) {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    Color.clear.frame(height: Theme.Spacing.lg)
+                    Color.clear.frame(height: 16)
 
                     if messages.isEmpty {
                         WelcomeView(assistantName: assistantName)
@@ -47,7 +46,7 @@ struct MessageListView: View {
                         }
                     }
 
-                    Color.clear.frame(height: Theme.Spacing.lg)
+                    Color.clear.frame(height: 16)
                 }
             }
             .onChange(of: messages.count) { oldCount, newCount in
@@ -71,11 +70,20 @@ struct MessageListView: View {
     private var jumpToLatestButton: some View {
         Group {
             if !scrollState.isAtBottom {
-                ShadButton("Latest", icon: "arrow.down", variant: .secondary, size: .sm) {
+                Button {
                     scrollState.engageFollowing()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.down")
+                        Text("Latest")
+                    }
+                    .font(.caption)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
                 }
-                .shadow(color: .black.opacity(0.15), radius: 4, y: 2)
-                .padding(.bottom, Theme.Spacing.md)
+                .buttonStyle(.glass(.regular))
+                .shadow(color: .black.opacity(0.1), radius: 4, y: 2)
+                .padding(.bottom, 10)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }

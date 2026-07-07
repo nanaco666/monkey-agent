@@ -1,10 +1,6 @@
 import SwiftUI
 
-// MARK: - shadcn/ui Button for SwiftUI
-//
-// Variants: default, secondary, outline, ghost, destructive, link
-// Sizes: xs, sm, default, lg, icon
-
+/// Button using Liquid Glass styles on macOS 26.
 struct ShadButton: View {
     let title: String?
     let icon: String?
@@ -13,7 +9,6 @@ struct ShadButton: View {
     let action: () -> Void
 
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.colorScheme) private var colorScheme
 
     enum Variant {
         case `default`
@@ -48,6 +43,33 @@ struct ShadButton: View {
     }
 
     var body: some View {
+        labelContent
+            .padding(.horizontal, hPadding)
+            .padding(.vertical, vPadding)
+            .frame(minHeight: minHeight)
+    }
+
+    @ViewBuilder
+    private var labelContent: some View {
+        switch variant {
+        case .default:
+            buttonWithStyle(.glassProminent)
+        case .secondary:
+            buttonWithStyle(.glass(.regular))
+        case .outline:
+            buttonWithStyle(.glass(.clear))
+        case .ghost:
+            buttonWithStyle(.plain)
+        case .destructive:
+            buttonWithStyle(.glass(.regular))
+                .tint(.red)
+        case .link:
+            buttonWithStyle(.plain)
+                .tint(.accentColor)
+        }
+    }
+
+    private func buttonWithStyle(_ style: some PrimitiveButtonStyle) -> some View {
         Button(action: action) {
             HStack(spacing: spacing) {
                 if let icon {
@@ -59,51 +81,9 @@ struct ShadButton: View {
                         .font(font)
                 }
             }
-            .padding(.horizontal, hPadding)
-            .padding(.vertical, vPadding)
-            .frame(minHeight: minHeight)
-            .background(background)
-            .foregroundStyle(foreground)
-            .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .overlay(borderOverlay)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(style)
         .opacity(isEnabled ? 1 : 0.5)
-    }
-
-    // MARK: - Styling
-
-    private var background: some ShapeStyle {
-        switch variant {
-        case .default:     return Theme.Colors.primary.resolve(for: colorScheme)
-        case .secondary:   return Theme.Colors.secondary.resolve(for: colorScheme)
-        case .outline:     return .clear
-        case .ghost:       return .clear
-        case .destructive: return Theme.Colors.destructive.resolve(for: colorScheme)
-        case .link:        return .clear
-        }
-    }
-
-    private var foreground: SwiftUI.Color {
-        switch variant {
-        case .default:     return Theme.Colors.primaryForeground.resolve(for: colorScheme)
-        case .secondary:   return Theme.Colors.secondaryForeground.resolve(for: colorScheme)
-        case .outline:     return Theme.Colors.foreground.resolve(for: colorScheme)
-        case .ghost:       return Theme.Colors.foreground.resolve(for: colorScheme)
-        case .destructive: return Theme.Colors.destructiveForeground.resolve(for: colorScheme)
-        case .link:        return Theme.Colors.primary.resolve(for: colorScheme)
-        }
-    }
-
-    @ViewBuilder
-    private var borderOverlay: some View {
-        switch variant {
-        case .outline:
-            RoundedRectangle(cornerRadius: cornerRadius)
-                .strokeBorder(Theme.Colors.border.resolve(for: colorScheme), lineWidth: 1)
-        default:
-            EmptyView()
-        }
     }
 
     // MARK: - Size metrics
@@ -151,16 +131,6 @@ struct ShadButton: View {
         case .xs, .iconXs: return 2
         case .sm:          return 3
         default:           return 4
-        }
-    }
-
-    private var cornerRadius: CGFloat {
-        switch size {
-        case .xs, .iconXs: return Theme.Radius.sm
-        case .sm:          return Theme.Radius.md
-        case .default:     return Theme.Radius.md
-        case .lg:          return Theme.Radius.lg
-        case .icon:        return Theme.Radius.md
         }
     }
 

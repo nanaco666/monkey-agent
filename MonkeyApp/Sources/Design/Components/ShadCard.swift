@@ -1,68 +1,42 @@
 import SwiftUI
 
-// MARK: - shadcn/ui Card for SwiftUI
-//
-// Elevated surface with --card background and --border outline.
-
+/// Card using Liquid Glass on macOS 26.
 struct ShadCard<Content: View>: View {
     let content: Content
     var padding: CGFloat = Theme.Spacing.lg
-    var showBorder: Bool = true
 
-    @Environment(\.colorScheme) private var colorScheme
-
-    init(padding: CGFloat = Theme.Spacing.lg, showBorder: Bool = true, @ViewBuilder content: () -> Content) {
+    init(padding: CGFloat = Theme.Spacing.lg, @ViewBuilder content: () -> Content) {
         self.padding = padding
-        self.showBorder = showBorder
         self.content = content()
     }
 
     var body: some View {
         content
             .padding(padding)
-            .background(Theme.Colors.card.resolve(for: colorScheme))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
-            .overlay(
-                Group {
-                    if showBorder {
-                        RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                            .strokeBorder(Theme.Colors.border.resolve(for: colorScheme), lineWidth: 0.5)
-                    }
-                }
-            )
+            .glassEffect(.regular, in: RoundedRectangle(cornerRadius: Theme.Radius.lg))
     }
 }
 
-// MARK: - shadcn/ui Separator
-
+/// Separator
 struct ShadSeparator: View {
     var orientation: Axis = .horizontal
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         if orientation == .horizontal {
-            Rectangle()
-                .fill(Theme.Colors.border.resolve(for: colorScheme))
-                .frame(height: 0.5)
+            Divider()
         } else {
-            Rectangle()
-                .fill(Theme.Colors.border.resolve(for: colorScheme))
-                .frame(width: 0.5)
+            Divider()
         }
     }
 }
 
-// MARK: - shadcn/ui Skeleton
-
+/// Skeleton loading placeholder
 struct ShadSkeleton: View {
     var cornerRadius: CGFloat = Theme.Radius.md
 
-    @Environment(\.colorScheme) private var colorScheme
-
     var body: some View {
         Rectangle()
-            .fill(Theme.Colors.muted.resolve(for: colorScheme))
+            .fill(.quaternary)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
             .shimmer()
     }
@@ -71,7 +45,6 @@ struct ShadSkeleton: View {
 // MARK: - Shimmer Modifier
 
 extension View {
-    /// Animated shimmer effect (loading placeholder)
     func shimmer() -> some View {
         self.modifier(ShimmerModifier())
     }

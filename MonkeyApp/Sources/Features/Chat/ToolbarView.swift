@@ -1,18 +1,18 @@
 import SwiftUI
 
-/// Top toolbar: connection status, model picker, mode toggle, usage, commands
+/// Top toolbar: connection status, model picker, mode toggle, usage, commands.
+/// Uses native macOS 26 glass button styles.
 struct ToolbarView: View {
     let store: ChatStore
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
-        HStack(spacing: Theme.Spacing.md) {
+        HStack(spacing: 8) {
             StatusDot(isConnected: store.isConnected)
 
             modelPicker
 
-            ShadSeparator(orientation: .vertical)
-                .frame(height: 14)
+            Spacer()
+                .frame(width: 8)
 
             modeToggle
 
@@ -21,19 +21,15 @@ struct ToolbarView: View {
             if store.usage.requests > 0 {
                 Text(store.usage.summary)
                     .font(Theme.Font.xs)
-                    .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                    .foregroundStyle(.tertiary)
             }
 
             commandsMenu
 
             clearButton
         }
-        .padding(.horizontal, Theme.Spacing.lg)
-        .padding(.vertical, Theme.Spacing.md - 2)
-        .background(
-            Theme.Colors.card.resolve(for: colorScheme)
-                .shadow(color: Theme.Colors.foreground.resolve(for: colorScheme).opacity(0.06), radius: 2, y: 1)
-        )
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
 
     private var modelPicker: some View {
@@ -50,7 +46,15 @@ struct ToolbarView: View {
                 }
             }
         } label: {
-            ShadBadge(text: store.displayModel, icon: "cpu", variant: .default)
+            HStack(spacing: 4) {
+                Image(systemName: "cpu")
+                    .font(.caption2)
+                Text(store.displayModel)
+                    .lineLimit(1)
+                    .font(.caption)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
         }
         .menuStyle(.borderlessButton)
     }
@@ -60,13 +64,17 @@ struct ToolbarView: View {
             store.wildMode.toggle()
             store.handleSlashCommand(store.wildMode ? "/wild" : "/tame")
         } label: {
-            ShadBadge(
-                text: store.wildMode ? "Wild" : "Tame",
-                icon: store.wildMode ? "flame.fill" : "shield.fill",
-                variant: store.wildMode ? .warning : .success
-            )
+            HStack(spacing: 3) {
+                Image(systemName: store.wildMode ? "flame.fill" : "shield.fill")
+                    .font(.caption2)
+                Text(store.wildMode ? "Wild" : "Tame")
+                    .font(.caption)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.glass(.regular))
+        .tint(store.wildMode ? .orange : .green)
     }
 
     private var commandsMenu: some View {
@@ -80,15 +88,19 @@ struct ToolbarView: View {
             }
         } label: {
             Image(systemName: "line.3.horizontal.decrease.circle")
-                .font(Theme.Font.sm)
-                .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                .font(.caption)
         }
         .menuStyle(.borderlessButton)
     }
 
     private var clearButton: some View {
-        ShadButton(icon: "trash", variant: .ghost, size: .iconXs) {
+        Button {
             store.clearConversation()
+        } label: {
+            Image(systemName: "trash")
+                .font(.caption)
         }
+        .buttonStyle(.glass(.regular))
+        .tint(.red)
     }
 }

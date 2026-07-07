@@ -1,12 +1,10 @@
 import SwiftUI
 
-/// A single message in a conversation, inspired by shadcn Message.
+/// A single message in a conversation, using Liquid Glass for badges and system messages.
 struct MessageRow: View {
     let message: ChatMessage
     let showAvatar: Bool
     let isGrouped: Bool
-
-    @Environment(\.colorScheme) private var colorScheme
 
     init(message: ChatMessage, showAvatar: Bool = true, isGrouped: Bool = false) {
         self.message = message
@@ -23,13 +21,13 @@ struct MessageRow: View {
         }
     }
 
-    // MARK: - User Message (right-aligned, shadcn primary bubble)
+    // MARK: - User Message (right-aligned bubble)
 
     private var userMessage: some View {
         HStack {
-            Spacer(minLength: Theme.Spacing.xxl)
+            Spacer(minLength: 48)
 
-            VStack(alignment: .trailing, spacing: Theme.Spacing.sm) {
+            VStack(alignment: .trailing, spacing: 4) {
                 if !message.attachments.isEmpty {
                     AttachmentGroup(attachments: message.attachments)
                         .frame(maxWidth: 300, alignment: .trailing)
@@ -38,35 +36,29 @@ struct MessageRow: View {
                 if !message.content.isEmpty {
                     Text(message.content)
                         .font(Theme.Font.body)
-                        .foregroundStyle(Theme.Colors.userBubbleForeground.resolve(for: colorScheme))
+                        .foregroundStyle(Color.white)
                         .textSelection(.enabled)
-                        .padding(.horizontal, Theme.Spacing.md + 2)
-                        .padding(.vertical, Theme.Spacing.sm + 2)
-                        .background(Theme.Colors.userBubble.resolve(for: colorScheme))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(Color.accentColor)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.lg))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: Theme.Radius.lg)
-                                .strokeBorder(Theme.Colors.userBubble.resolve(for: colorScheme), lineWidth: 1.5)
-                        )
                 }
 
                 if !isGrouped, let time = message.timestamp {
                     Text(time, style: .time)
                         .font(Theme.Font.xs)
-                        .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                        .foregroundStyle(.tertiary)
                 }
             }
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, isGrouped ? Theme.Spacing.xs : Theme.Spacing.sm)
+        .padding(.horizontal, 20)
+        .padding(.vertical, isGrouped ? 2 : 6)
     }
 
     // MARK: - Assistant Message (left-aligned with avatar)
 
-    @State private var isAssistantHovered = false
-
     private var assistantMessage: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+        HStack(alignment: .top, spacing: 10) {
             if showAvatar {
                 if let nsImage = NSImage(contentsOfFile: Bundle.main.path(forResource: "monkey_avatar", ofType: "png") ?? "") {
                     Image(nsImage: nsImage)
@@ -84,12 +76,12 @@ struct MessageRow: View {
                     .frame(width: Theme.Avatar.md)
             }
 
-            VStack(alignment: .leading, spacing: Theme.Spacing.sm) {
+            VStack(alignment: .leading, spacing: 4) {
                 if showAvatar {
                     Text(message.role.displayName)
                         .font(Theme.Font.sm)
                         .fontWeight(.semibold)
-                        .foregroundStyle(Theme.Colors.assistantAccent.resolve(for: colorScheme))
+                        .foregroundStyle(.secondary)
                 }
 
                 if !message.attachments.isEmpty {
@@ -102,10 +94,10 @@ struct MessageRow: View {
                 }
 
                 if !isGrouped, !message.isStreaming, let time = message.timestamp {
-                    HStack(spacing: Theme.Spacing.sm) {
+                    HStack(spacing: 6) {
                         Text(time, style: .time)
                             .font(Theme.Font.xs)
-                            .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                            .foregroundStyle(.tertiary)
 
                         if !message.isStreaming && !message.content.isEmpty {
                             CopyButton(text: message.content)
@@ -116,24 +108,23 @@ struct MessageRow: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, isGrouped ? Theme.Spacing.xs : Theme.Spacing.sm)
+        .padding(.horizontal, 20)
+        .padding(.vertical, isGrouped ? 2 : 6)
     }
 
-    // MARK: - Tool Message (single-line shimmer style)
+    // MARK: - Tool Message (glass badge style)
 
     @State private var shimmerOffset: CGFloat = -100
 
     private var toolMessage: some View {
-        HStack(alignment: .top, spacing: Theme.Spacing.md) {
+        HStack(alignment: .top, spacing: 10) {
             Color.clear.frame(width: Theme.Avatar.md)
 
-            HStack(spacing: Theme.Spacing.sm) {
-                // Spinning gear while running, checkmark when done
+            HStack(spacing: 6) {
                 if message.isStreaming {
                     Image(systemName: "gearshape.fill")
                         .font(Theme.Font.xs)
-                        .foregroundStyle(Theme.Colors.toolAccent.resolve(for: colorScheme))
+                        .foregroundStyle(.secondary)
                         .rotationEffect(.degrees(shimmerOffset * 3.6))
                         .onAppear {
                             withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
@@ -143,27 +134,31 @@ struct MessageRow: View {
                 } else {
                     Image(systemName: "checkmark.circle.fill")
                         .font(Theme.Font.xs)
-                        .foregroundStyle(Theme.Colors.success.resolve(for: colorScheme))
+                        .foregroundStyle(.green)
                 }
 
                 if let name = message.toolName {
-                    ShadBadge(text: name, variant: .outline)
+                    Text(name)
+                        .font(Theme.Font.xs)
+                        .fontWeight(.medium)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .glassEffect(.clear, in: .capsule)
                 }
 
                 if let summary = message.toolSummary, !summary.isEmpty {
                     Text(summary)
                         .font(Theme.Font.sm)
-                        .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .shimmer()
                         .opacity(message.isStreaming ? 1 : 0.7)
                 }
 
-                // Show error inline if present
                 if !message.content.isEmpty, message.content.hasPrefix("Error:") {
                     Text(message.content)
                         .font(Theme.Font.xs)
-                        .foregroundStyle(Theme.Colors.error.resolve(for: colorScheme))
+                        .foregroundStyle(.red)
                         .lineLimit(1)
                 }
             }
@@ -171,25 +166,24 @@ struct MessageRow: View {
 
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.xs)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 2)
     }
 
-    // MARK: - System Message (centered, shadcn muted)
+    // MARK: - System Message (centered glass pill)
 
     private var systemMessage: some View {
         HStack {
             Spacer()
             Text(message.content)
                 .font(Theme.Font.sm)
-                .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
-                .padding(.horizontal, Theme.Spacing.md)
-                .padding(.vertical, Theme.Spacing.sm)
-                .background(Theme.Colors.muted.resolve(for: colorScheme).opacity(0.5))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+                .glassEffect(.clear, in: .capsule)
             Spacer()
         }
-        .padding(.horizontal, Theme.Spacing.xl)
-        .padding(.vertical, Theme.Spacing.sm)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 6)
     }
 }

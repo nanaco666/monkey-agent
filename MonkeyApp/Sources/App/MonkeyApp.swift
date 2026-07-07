@@ -3,12 +3,21 @@ import SwiftUI
 @main
 struct MonkeyApp: App {
     @State private var store = ChatStore()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some Scene {
         WindowGroup {
             ChatView(store: store)
+                .windowResizeAnchor(.center)
                 .onAppear { store.start() }
-                .onDisappear { store.stop() }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                store.stop()
+            } else if phase == .active {
+                store.start()
+            }
+            // .inactive = window losing focus, don't disconnect
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))

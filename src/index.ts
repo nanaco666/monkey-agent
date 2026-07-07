@@ -82,11 +82,15 @@ if (args[0] === 'telegram' || args[0] === 'tg') {
   process.exit(0)
 }
 
+// Daemon mode: monkey daemon
+if (args[0] === 'daemon') {
+  const { startDaemon } = await import('./core/daemon.js')
+  startDaemon()
+  await new Promise<void>(() => {}) // never resolves — server keeps event loop alive
+}
+
 // App protocol mode: monkey app (JSON-RPC over stdio for macOS GUI)
 if (args[0] === 'app') {
-  // app-protocol takes over stdin/stdout, registers handlers, and keeps process alive
-  // until 'shutdown' method or SIGTERM.
-  // We use a deferred promise so this await never resolves.
   await import('./core/app-protocol.js')
   await new Promise<void>(() => {}) // never resolves
 }

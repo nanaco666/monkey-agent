@@ -3,14 +3,15 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 APP_DIR="/Applications/Monkey.app"
 
 echo "🔨 Building CLI..."
-cd "$SCRIPT_DIR"
+cd "$ROOT_DIR"
 npm run build
 
 echo "🔨 Building Swift app..."
-cd MonkeyApp
+cd "$ROOT_DIR/MonkeyApp"
 swift build -c release 2>&1 | tail -3
 
 echo "📦 Installing app bundle..."
@@ -21,7 +22,7 @@ cp .build/release/MonkeyApp "$APP_DIR/Contents/MacOS/MonkeyApp"
 
 # Copy Info.plist if not exists
 if [ ! -f "$APP_DIR/Contents/Info.plist" ]; then
-  cp ../scripts/app/Info.plist "$APP_DIR/Contents/Info.plist"
+  cp "$SCRIPT_DIR/app/Info.plist" "$APP_DIR/Contents/Info.plist"
 fi
 
 # Copy Resources (icon, avatar, etc.)
