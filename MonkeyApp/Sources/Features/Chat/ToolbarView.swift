@@ -28,7 +28,7 @@ struct MonkeyToolbar: ToolbarContent {
             }
         } label: {
             HStack(spacing: 4) {
-                Image(systemName: "cpu")
+                Text("🍌")
                     .font(.caption2)
                 Text(store.displayModel)
                     .lineLimit(1)
