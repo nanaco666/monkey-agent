@@ -10,7 +10,12 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "MonkeyApp",
-            path: "Sources"
+            path: "Sources",
+            // Exclude old files during migration (can be deleted later)
+            exclude: [],
+            resources: [
+                .process("../Resources")
+            ]
         ),
     ]
 )

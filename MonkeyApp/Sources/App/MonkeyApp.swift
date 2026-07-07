@@ -2,18 +2,13 @@ import SwiftUI
 
 @main
 struct MonkeyApp: App {
-    @StateObject private var chatState = ChatState()
+    @State private var store = ChatStore()
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(chatState)
-                .onAppear {
-                    chatState.startMonkeyProcess()
-                }
-                .onDisappear {
-                    chatState.stopMonkeyProcess()
-                }
+            ChatView(store: store)
+                .onAppear { store.start() }
+                .onDisappear { store.stop() }
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified(showsTitle: true))
@@ -22,37 +17,36 @@ struct MonkeyApp: App {
             CommandGroup(replacing: .newItem) { }
             CommandMenu("Monkey") {
                 Button("Clear Conversation") {
-                    chatState.clearConversation()
+                    store.clearConversation()
                 }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
 
                 Divider()
 
                 Button("Wild Mode") {
-                    chatState.wildMode = true
-                    chatState.handleSlashCommand("/wild")
+                    store.wildMode = true
+                    store.handleSlashCommand("/wild")
                 }
                 Button("Tame Mode") {
-                    chatState.wildMode = false
-                    chatState.handleSlashCommand("/tame")
+                    store.wildMode = false
+                    store.handleSlashCommand("/tame")
                 }
 
                 Divider()
 
                 Button("Compact Context") {
-                    Task { await chatState.compactContext() }
+                    Task { await store.compactContext() }
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
 
                 Button("Clean Stale Data") {
-                    Task { await chatState.cleanStale() }
+                    Task { await store.cleanStale() }
                 }
             }
         }
 
         Settings {
-            SettingsView()
-                .environmentObject(chatState)
+            SettingsView(store: store)
         }
     }
 }

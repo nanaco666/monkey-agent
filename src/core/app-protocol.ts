@@ -252,7 +252,7 @@ async function handleChat(id: number, _prompt: string): Promise<void> {
         if (abortController.signal.aborted) break
 
         const isError = result.startsWith('Error:')
-        send({ method: 'stream/tool_result', params: { name: t.name, result: result.slice(0, 500), error: isError } })
+        send({ method: 'stream/tool_result', params: { id: t.id, name: t.name, result: result.slice(0, 500), error: isError } })
         toolResults.push({ type: 'tool_result', tool_use_id: t.id, content: result })
       }
 

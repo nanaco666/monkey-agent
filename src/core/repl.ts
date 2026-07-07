@@ -51,6 +51,7 @@ function resolveModel(input: string): string | null {
 }
 
 const SLOW_TOOL_MS = 300 // show spinner only if tool takes longer than this
+const MAX_ITERATIONS = 50 // max tool-use rounds per turn before giving up
 
 const TOOL_MESSAGES: Record<string, string> = {
   bash:  'running...',
@@ -768,8 +769,16 @@ export async function startRepl(config: Config): Promise<void> {
             // 启用 Ctrl+C 中止
             const cmdAbortController = enableInterrupt()
             let cmdAborted = false
+            let cmdIterations = 0
+            let cmdLastToolSig = ''
 
             while (true) {
+              if (cmdIterations++ >= MAX_ITERATIONS) {
+                clearCmdThinking()
+                process.stdout.write(chalk.red(`\n  ✗ reached ${MAX_ITERATIONS} iterations, stopping\n`))
+                break
+              }
+
               cmdText = ''
               let cmdThinkingPhase: 'none' | 'static' | 'spinner' = 'none'
               spinner.showStatic('thinking...')
@@ -820,6 +829,15 @@ export async function startRepl(config: Config): Promise<void> {
               for (const t of toolUses) assistantBlocks.push({ type: 'tool_use', id: t.id, name: t.name, input: t.input })
               if (assistantBlocks.length > 0) cmdMessages.push({ role: 'assistant', content: assistantBlocks as never })
               if (toolUses.length === 0) break
+
+              const cmdToolSig = toolUses.map(t => `${t.name}:${JSON.stringify(t.input)}`).join('|')
+              if (cmdToolSig === cmdLastToolSig) {
+                clearCmdThinking()
+                process.stdout.write(chalk.red(`\n  ✗ repeated identical tool call, stopping\n`))
+                break
+              }
+              cmdLastToolSig = cmdToolSig
+
               const toolResults: ContentBlock[] = []
               for (const t of toolUses) {
                 printToolCall(t.name, t.input)
@@ -876,7 +894,16 @@ export async function startRepl(config: Config): Promise<void> {
       // 启用 Ctrl+C 中断
       const abortController = enableInterrupt()
 
+      let iterations = 0
+      let lastToolSig = ''
+
       while (true) {
+        if (iterations++ >= MAX_ITERATIONS) {
+          clearThinking()
+          process.stdout.write(chalk.red(`\n  ✗ reached ${MAX_ITERATIONS} iterations, stopping to avoid infinite loop\n`))
+          break
+        }
+
         responseText = ''
         let thinkingPhase: 'none' | 'static' | 'spinner' = 'none'
 
@@ -945,6 +972,15 @@ export async function startRepl(config: Config): Promise<void> {
         }
 
         if (toolUses.length === 0) break
+
+        // Detect repeated identical tool calls (model stuck in a loop)
+        const toolSig = toolUses.map(t => `${t.name}:${JSON.stringify(t.input)}`).join('|')
+        if (toolSig === lastToolSig) {
+          clearThinking()
+          process.stdout.write(chalk.red(`\n  ✗ repeated identical tool call, stopping to avoid loop\n`))
+          break
+        }
+        lastToolSig = toolSig
 
         const toolResults: ContentBlock[] = []
         for (const t of toolUses) {

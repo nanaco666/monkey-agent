@@ -24,9 +24,14 @@ if [ ! -f "$APP_DIR/Contents/Info.plist" ]; then
   cp ../scripts/app/Info.plist "$APP_DIR/Contents/Info.plist"
 fi
 
-# Copy icon if not exists
-if [ ! -f "$APP_DIR/Contents/Resources/AppIcon.icns" ]; then
-  echo "⚠️  No icon file found. Run scripts/app/make_icon.sh first."
+# Copy Resources (icon, avatar, etc.)
+cp Resources/* "$APP_DIR/Contents/Resources/"
+
+# Copy SPM resource bundle (needed for bundle: .module)
+SPM_BUNDLE=".build/release/MonkeyApp_MonkeyApp.bundle"
+if [ -d "$SPM_BUNDLE" ]; then
+    cp -R "$SPM_BUNDLE" "$APP_DIR/Contents/Resources/"
+    echo "📦 Copied SPM resource bundle"
 fi
 
 echo "✅ Monkey app installed at $APP_DIR"

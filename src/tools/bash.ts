@@ -18,18 +18,37 @@ export const bashToolDef = {
 }
 
 export async function runBash(command: string, timeout = TIMEOUT_MS, signal?: AbortSignal): Promise<string> {
-  // 如果已经中止，直接返回
   if (signal?.aborted) return 'Error: aborted'
 
   return new Promise((resolve) => {
     const shell = isWindows ? 'powershell.exe' : '/bin/bash'
     const shellArgs = isWindows ? ['/c', command] : ['-c', command]
+    // detached: true creates a new process group so we can kill the whole tree
     const child = spawn(shell, shellArgs, {
-      timeout,
+      detached: !isWindows,
     })
 
     let stdout = ''
     let stderr = ''
+    let settled = false
+
+    const killTree = (sig: NodeJS.Signals) => {
+      try {
+        if (isWindows) {
+          child.kill(sig)
+        } else if (child.pid !== undefined) {
+          // Negative PID kills entire process group
+          process.kill(-child.pid, sig)
+        }
+      } catch { /* process may have already exited */ }
+    }
+
+    const finish = (result: string) => {
+      if (settled) return
+      settled = true
+      if (timeoutHandle) clearTimeout(timeoutHandle)
+      resolve(result)
+    }
 
     child.stdout?.on('data', (data: Buffer) => { stdout += data.toString() })
     child.stderr?.on('data', (data: Buffer) => { stderr += data.toString() })
@@ -37,26 +56,35 @@ export async function runBash(command: string, timeout = TIMEOUT_MS, signal?: Ab
     child.on('close', (code: number | null) => {
       const out = [stdout, stderr].filter(Boolean).join('\n').trim()
       if (signal?.aborted) {
-        resolve('Error: command aborted')
+        finish('Error: command aborted')
         return
       }
       if (code !== null && code !== 0 && !out) {
-        resolve(`Error: exit code ${code}`)
+        finish(`Error: exit code ${code}`)
         return
       }
-      resolve(out || '(no output)')
+      finish(out || '(no output)')
     })
 
     child.on('error', (err: Error) => {
-      resolve(`Error: ${err.message}`)
+      finish(`Error: ${err.message}`)
     })
 
-    // 监听中止信号，kill 子进程
+    // Manual timeout: kill process group, then force-kill after 2s
+    const timeoutHandle = setTimeout(() => {
+      killTree('SIGTERM')
+      setTimeout(() => killTree('SIGKILL'), 2000)
+      // Resolve immediately so the agent isn't blocked waiting for orphan children
+      const out = [stdout, stderr].filter(Boolean).join('\n').trim()
+      finish(out ? `(timeout) ${out}` : `Error: command timed out after ${timeout}ms`)
+    }, timeout)
+
+    // AbortSignal handler
     if (signal) {
       const onAbort = () => {
-        child.kill('SIGTERM')
-        // 给 2 秒优雅退出，否则强杀
-        setTimeout(() => { child.kill('SIGKILL') }, 2000)
+        killTree('SIGTERM')
+        setTimeout(() => killTree('SIGKILL'), 2000)
+        finish('Error: command aborted')
       }
       if (signal.aborted) {
         onAbort()
