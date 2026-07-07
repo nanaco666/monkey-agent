@@ -119,52 +119,75 @@ struct MessageRow: View {
 
     private var toolMessage: some View {
         HStack(alignment: .top, spacing: 10) {
-            Color.clear.frame(width: Theme.Avatar.md)
-
-            HStack(spacing: 6) {
-                if message.isStreaming {
-                    Image(systemName: "gearshape.fill")
-                        .font(Theme.Font.xs)
-                        .foregroundStyle(Theme.Colors.toolAccent.resolve(for: colorScheme))
-                        .rotationEffect(.degrees(shimmerOffset * 3.6))
-                        .onAppear {
-                            withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
-                                shimmerOffset = 0
-                            }
-                        }
+            if showAvatar {
+                if let nsImage = NSImage(contentsOfFile: Bundle.main.path(forResource: "monkey_avatar", ofType: "png") ?? "") {
+                    Image(nsImage: nsImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: Theme.Avatar.md, height: Theme.Avatar.md)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.md))
                 } else {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(Theme.Font.xs)
-                        .foregroundStyle(Theme.Colors.success.resolve(for: colorScheme))
+                    Text("🐵")
+                        .font(.title2)
+                        .frame(width: Theme.Avatar.md, height: Theme.Avatar.md, alignment: .top)
                 }
-
-                if let name = message.toolName {
-                    Text(name)
-                        .font(Theme.Font.xs)
-                        .fontWeight(.medium)
-                        .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .glassEffect(.clear, in: .capsule)
-                }
-
-                if let summary = message.toolSummary, !summary.isEmpty {
-                    Text(summary)
-                        .font(Theme.Font.sm)
-                        .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
-                        .lineLimit(1)
-                        .shimmer()
-                        .opacity(message.isStreaming ? 1 : 0.7)
-                }
-
-                if !message.content.isEmpty, message.content.hasPrefix("Error:") {
-                    Text(message.content)
-                        .font(Theme.Font.xs)
-                        .foregroundStyle(Theme.Colors.error.resolve(for: colorScheme))
-                        .lineLimit(1)
-                }
+            } else {
+                Color.clear.frame(width: Theme.Avatar.md)
             }
-            .font(Theme.Font.sm)
+
+            VStack(alignment: .leading, spacing: 2) {
+                if showAvatar {
+                    Text("Monkey")
+                        .font(Theme.Font.sm)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.Colors.assistantAccent.resolve(for: colorScheme))
+                }
+
+                HStack(spacing: 6) {
+                    if message.isStreaming {
+                        Image(systemName: "gearshape.fill")
+                            .font(Theme.Font.xs)
+                            .foregroundStyle(Theme.Colors.toolAccent.resolve(for: colorScheme))
+                            .rotationEffect(.degrees(shimmerOffset * 3.6))
+                            .onAppear {
+                                withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) {
+                                    shimmerOffset = 0
+                                }
+                            }
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(Theme.Font.xs)
+                            .foregroundStyle(Theme.Colors.success.resolve(for: colorScheme))
+                    }
+
+                    if let name = message.toolName {
+                        Text(name)
+                            .font(Theme.Font.xs)
+                            .fontWeight(.medium)
+                            .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .glassEffect(.clear, in: .capsule)
+                    }
+
+                    if let summary = message.toolSummary, !summary.isEmpty {
+                        Text(summary)
+                            .font(Theme.Font.sm)
+                            .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
+                            .lineLimit(1)
+                            .shimmer()
+                            .opacity(message.isStreaming ? 1 : 0.7)
+                    }
+
+                    if !message.content.isEmpty, message.content.hasPrefix("Error:") {
+                        Text(message.content)
+                            .font(Theme.Font.xs)
+                            .foregroundStyle(Theme.Colors.error.resolve(for: colorScheme))
+                            .lineLimit(1)
+                    }
+                }
+                .font(Theme.Font.sm)
+            }
 
             Spacer(minLength: 0)
         }

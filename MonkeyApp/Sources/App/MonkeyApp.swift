@@ -19,8 +19,7 @@ struct MonkeyApp: App {
             }
             // .inactive = window losing focus, don't disconnect
         }
-        .windowStyle(.titleBar)
-        .windowToolbarStyle(.unified(showsTitle: true))
+        .windowToolbarStyle(.unified)
         .defaultSize(width: 720, height: 560)
         .commands {
             CommandGroup(replacing: .newItem) { }

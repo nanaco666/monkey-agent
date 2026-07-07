@@ -6,6 +6,7 @@ struct MessageListView: View {
     let messages: [ChatMessage]
     let scrollState: ChatScrollState
     var assistantName: String = "Monkey"
+    var isAgentThinking: Bool = false
 
     private var grouped: [(message: ChatMessage, showAvatar: Bool, isGrouped: Bool)] {
         MessageGroupBuilder.group(messages)
@@ -44,16 +45,24 @@ struct MessageListView: View {
                             )
                             .id(item.message.id)
                         }
+
+                        if isAgentThinking {
+                            ThinkingIndicator()
+                                .id("thinking")
+                        }
                     }
 
                     Color.clear.frame(height: 16)
                 }
             }
-            .onChange(of: messages.count) { oldCount, newCount in
-                guard newCount > oldCount else { return }
+            .onChange(of: messages.count) { _, newCount in
                 if scrollState.isFollowing {
                     withAnimation(Theme.Animation.scroll) {
-                        proxy.scrollTo(messages.last?.id, anchor: .bottom)
+                        if isAgentThinking {
+                            proxy.scrollTo("thinking", anchor: .bottom)
+                        } else {
+                            proxy.scrollTo(messages.last?.id, anchor: .bottom)
+                        }
                     }
                 }
             }
@@ -61,6 +70,13 @@ struct MessageListView: View {
                 if scrollState.isFollowing {
                     withAnimation(Theme.Animation.scroll) {
                         proxy.scrollTo(messages.last?.id, anchor: .bottom)
+                    }
+                }
+            }
+            .onChange(of: isAgentThinking) {
+                if scrollState.isFollowing, isAgentThinking {
+                    withAnimation(Theme.Animation.scroll) {
+                        proxy.scrollTo("thinking", anchor: .bottom)
                     }
                 }
             }

@@ -36,14 +36,7 @@ private struct GeneralSettingsTab: View {
                 set: { store.wildMode = $0; store.handleSlashCommand($0 ? "/wild" : "/tame") }
             ))
 
-            LabeledContent("Status") {
-                HStack(spacing: 4) {
-                    StatusDot(isConnected: store.isConnected)
-                    Text(store.isConnected ? "Connected" : "Connecting…")
-                        .font(Theme.Font.sm)
-                        .foregroundStyle(.secondary)
-                }
-            }
+
         }
         .padding(20)
     }

@@ -172,10 +172,6 @@ struct WelcomeView: View {
                     .foregroundStyle(accentColors.randomElement() ?? Color(red: 240/255, green: 183/255, blue: 49/255))
             }
 
-            Text(assistantName)
-                .font(Theme.Font.sm)
-                .foregroundStyle(Theme.Colors.foreground.resolve(for: colorScheme))
-
             Spacer()
         }
         .frame(maxWidth: .infinity)
@@ -187,11 +183,13 @@ struct WelcomeView: View {
         let chars = Array(line)
         let spans = buildSpans(for: chars)
         HStack(spacing: 0) {
+            Spacer(minLength: 0)
             ForEach(Array(spans.enumerated()), id: \.offset) { _, span in
                 Text(span.text)
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(span.color)
             }
+            Spacer(minLength: 0)
         }
     }
 

@@ -1,37 +1,17 @@
 import SwiftUI
 
-/// Top toolbar: warm background with Liquid Glass controls floating above.
-struct ToolbarView: View {
-    let store: ChatStore
+/// Native macOS toolbar with model picker.
+struct MonkeyToolbar: ToolbarContent {
+    @Bindable var store: ChatStore
     @Environment(\.colorScheme) private var colorScheme
 
-    var body: some View {
-        HStack(spacing: 8) {
-            StatusDot(isConnected: store.isConnected)
-
+    var body: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
             modelPicker
-
-            Spacer()
-                .frame(width: 8)
-
-            modeToggle
-
-            Spacer()
-
-            if store.usage.requests > 0 {
-                Text(store.usage.summary)
-                    .font(Theme.Font.xs)
-                    .foregroundStyle(Theme.Colors.mutedForeground.resolve(for: colorScheme))
-            }
-
-            commandsMenu
-
-            clearButton
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(Theme.Colors.card.resolve(for: colorScheme))
     }
+
+    // MARK: - Model Picker
 
     private var modelPicker: some View {
         Menu {
@@ -54,54 +34,6 @@ struct ToolbarView: View {
                     .lineLimit(1)
                     .font(.caption)
             }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
         }
-        .menuStyle(.borderlessButton)
-    }
-
-    private var modeToggle: some View {
-        Button {
-            store.wildMode.toggle()
-            store.handleSlashCommand(store.wildMode ? "/wild" : "/tame")
-        } label: {
-            HStack(spacing: 3) {
-                Image(systemName: store.wildMode ? "flame.fill" : "shield.fill")
-                    .font(.caption2)
-                Text(store.wildMode ? "Wild" : "Tame")
-                    .font(.caption)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-        }
-        .buttonStyle(.glass(.regular))
-        .tint(store.wildMode ? .orange : .green)
-    }
-
-    private var commandsMenu: some View {
-        Menu {
-            Section("Commands") {
-                ForEach(SlashCommandRegistry.all, id: \.cmd) { entry in
-                    Button("\(entry.cmd) — \(entry.description)") {
-                        store.handleSlashCommand(entry.cmd)
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "line.3.horizontal.decrease.circle")
-                .font(.caption)
-        }
-        .menuStyle(.borderlessButton)
-    }
-
-    private var clearButton: some View {
-        Button {
-            store.clearConversation()
-        } label: {
-            Image(systemName: "trash")
-                .font(.caption)
-        }
-        .buttonStyle(.glass(.regular))
-        .tint(.red)
     }
 }
