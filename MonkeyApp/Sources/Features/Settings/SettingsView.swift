@@ -20,11 +20,15 @@ private struct GeneralSettingsTab: View {
     let store: ChatStore
     @Binding var selectedModel: String
 
+    private var models: [(alias: String, id: String)] {
+        store.availableModels.isEmpty ? ModelRegistry.fallback : store.availableModels
+    }
+
     var body: some View {
         Form {
             Picker("Default Model", selection: $selectedModel) {
-                ForEach(ModelRegistry.all, id: \.1) { alias, model in
-                    Text(alias).tag(model)
+                ForEach(models, id: \.id) { item in
+                    Text(item.alias).tag(item.id)
                 }
             }
             .onChange(of: selectedModel) {

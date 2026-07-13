@@ -9,7 +9,6 @@ struct MonkeyApp: App {
         WindowGroup {
             ChatView(store: store)
                 .windowResizeAnchor(.center)
-                .onAppear { store.start() }
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background {
@@ -20,7 +19,7 @@ struct MonkeyApp: App {
             // .inactive = window losing focus, don't disconnect
         }
         .windowToolbarStyle(.unified)
-        .defaultSize(width: 720, height: 560)
+        .defaultSize(width: 900, height: 600)
         .commands {
             CommandGroup(replacing: .newItem) { }
             CommandMenu("Monkey") {

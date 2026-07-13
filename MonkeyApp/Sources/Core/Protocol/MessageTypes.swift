@@ -7,7 +7,7 @@ enum MessageRole: String, Codable, Sendable {
     case user, assistant, tool, system
 }
 
-struct ChatMessage: Identifiable {
+struct ChatMessage: Identifiable, Codable {
     let id: UUID
     let role: MessageRole
     var content: String
@@ -17,6 +17,10 @@ struct ChatMessage: Identifiable {
     var timestamp: Date?
     var isStreaming: Bool
     var attachments: [MessageAttachment]
+
+    enum CodingKeys: String, CodingKey {
+        case id, role, content, toolName, toolSummary, toolId, timestamp, attachments
+    }
 
     init(
         id: UUID = UUID(),
@@ -39,11 +43,36 @@ struct ChatMessage: Identifiable {
         self.isStreaming = isStreaming
         self.attachments = attachments
     }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        role = try c.decode(MessageRole.self, forKey: .role)
+        content = try c.decode(String.self, forKey: .content)
+        toolName = try c.decodeIfPresent(String.self, forKey: .toolName)
+        toolSummary = try c.decodeIfPresent(String.self, forKey: .toolSummary)
+        toolId = try c.decodeIfPresent(String.self, forKey: .toolId)
+        timestamp = try c.decodeIfPresent(Date.self, forKey: .timestamp)
+        attachments = try c.decodeIfPresent([MessageAttachment].self, forKey: .attachments) ?? []
+        isStreaming = false
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(role, forKey: .role)
+        try c.encode(content, forKey: .content)
+        try c.encodeIfPresent(toolName, forKey: .toolName)
+        try c.encodeIfPresent(toolSummary, forKey: .toolSummary)
+        try c.encodeIfPresent(toolId, forKey: .toolId)
+        try c.encodeIfPresent(timestamp, forKey: .timestamp)
+        try c.encode(attachments, forKey: .attachments)
+    }
 }
 
 // MARK: - Attachment
 
-struct MessageAttachment: Identifiable {
+struct MessageAttachment: Identifiable, Codable {
     let id: UUID
     let name: String
     let fileType: String       // e.g. "PDF", "PNG", "TypeScript"
@@ -58,6 +87,10 @@ struct MessageAttachment: Identifiable {
         case processing
         case error(String)                // Error message
         case done
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, fileType, fileSize, url
     }
 
     init(
@@ -76,6 +109,26 @@ struct MessageAttachment: Identifiable {
         self.state = state
         self.imageData = imageData
         self.url = url
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        fileType = try c.decode(String.self, forKey: .fileType)
+        fileSize = try c.decodeIfPresent(String.self, forKey: .fileSize)
+        url = try c.decodeIfPresent(String.self, forKey: .url)
+        state = .done
+        imageData = nil
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(fileType, forKey: .fileType)
+        try c.encodeIfPresent(fileSize, forKey: .fileSize)
+        try c.encodeIfPresent(url, forKey: .url)
     }
 
     var isImage: Bool {
@@ -100,16 +153,20 @@ struct UsageInfo: Sendable {
 // MARK: - Model & Command Registry
 
 enum ModelRegistry {
-    static let all: [(alias: String, model: String)] = [
+    /// Built-in fallback models shown when daemon hasn't connected yet
+    static let fallback: [(alias: String, id: String)] = [
         ("Sonnet 4", "claude-sonnet-4-6"),
-        ("Opus 4",   "claude-opus-4-6"),
-        ("Haiku 4",  "claude-haiku-4-5-latest"),
-        ("GPT-4o",   "gpt-4o"),
-        ("o3",       "o3"),
-        ("o4-mini",  "o4-mini"),
-        ("GLM-5",    "glm-5"),
-        ("GLM-4.5",  "glm-4.5"),
+        ("Haiku 4.5", "claude-haiku-4-5"),
+        ("GLM-5.2", "glm-5.2"),
+        ("GLM-5.1", "glm-5.1"),
+        ("GLM-5", "glm-5"),
+        ("GLM-4.5", "glm-4.5"),
     ]
+
+    /// Convert model ID to display alias
+    static func alias(for model: String, models: [(alias: String, id: String)] = []) -> String {
+        models.first(where: { $0.id == model })?.alias ?? model
+    }
 }
 
 enum SlashCommandRegistry {

@@ -6,7 +6,7 @@
  * stderr is left for debug logging.
  */
 
-import { loadConfig, saveConfig } from '../config/index.js'
+import { loadConfig, saveConfig, type Config } from '../config/index.js'
 import { initProviders, streamResponse, type Message } from './api.js'
 import { executeTool } from '../tools/index.js'
 import { buildMemoryContext } from '../memory/context.js'
@@ -17,15 +17,52 @@ import { homedir } from 'os'
 import { join, dirname } from 'path'
 import { fileURLToPath } from 'url'
 import type { ContentBlock } from '../providers/index.js'
+import {
+  createSession, loadSession, saveSession, deleteSession, listSessions,
+  migrateAllSwiftSessions, type Session,
+} from '../session/store.js'
 
 type JsonDict = Record<string, unknown>
 
 let config: ReturnType<typeof loadConfig>
-let messages: Message[] = []
+let currentSession: Session | null = null
 let memoryContext = ''
 let wildMode = false
 let requestId = 0
 let activeAbortController: AbortController | null = null
+
+/** Shorthand for the current session's messages */
+function messages(): Message[] {
+  if (!currentSession) return []
+  return currentSession.messages
+}
+
+/** Serialize messages for GUI: extract text content + tool info into a flat list */
+function serializeMessages(msgs: Message[]): JsonDict[] {
+  const result: JsonDict[] = []
+  for (const m of msgs) {
+    if (typeof m.content === 'string') {
+      result.push({ role: m.role, content: m.content })
+    } else {
+      let text = ''
+      let isTool = false
+      for (const block of m.content as ContentBlock[]) {
+        if (block.type === 'text') {
+          text += block.text
+        } else if (block.type === 'tool_use') {
+          isTool = true
+          const summary = String(block.input.command ?? block.input.path ?? block.input.pattern ?? '').slice(0, 60)
+          result.push({ role: 'tool', content: summary || block.name, toolName: block.name, toolId: block.id })
+        } else if (block.type === 'tool_result') {
+          isTool = true
+          result.push({ role: 'tool', content: block.content.slice(0, 300), toolId: block.tool_use_id })
+        }
+      }
+      if (text) result.push({ role: m.role, content: text })
+    }
+  }
+  return result
+}
 
 // -- JSON-RPC helpers --
 
@@ -97,6 +134,22 @@ async function handleMessage(line: string): Promise<void> {
       } catch {}
 
       const sessionClean = cleanSessionsOnly()
+      // One-time migration of Swift-format sessions
+      const migrated = migrateAllSwiftSessions()
+      if (migrated > 0) process.stderr.write(`[app-protocol] migrated ${migrated} Swift sessions\n`)
+
+      // Load most recent session, or create one
+      const sessions = listSessions()
+      if (sessions.length > 0) {
+        currentSession = loadSession(sessions[0].id)
+      }
+      if (!currentSession) {
+        currentSession = createSession(config.model, false)
+      }
+      wildMode = currentSession.wildMode
+
+      // Build available models list from config
+      const models = buildModelList(config)
 
       sendResult(id ?? 0, {
         model: config.model,
@@ -105,15 +158,103 @@ async function handleMessage(line: string): Promise<void> {
         wildMode,
         memoryLoaded: !!memoryContext,
         sessionsCleaned: sessionClean.removed,
+        models,
+        sessionId: currentSession.id,
+        sessionTitle: currentSession.title,
+        messageCount: currentSession.messages.length,
       })
       break
 
+    case 'session_list': {
+      const allSessions = listSessions()
+      sendResult(id ?? 0, { sessions: allSessions })
+      break
+    }
+
+    case 'session_new': {
+      if (currentSession) {
+        currentSession.wildMode = wildMode
+        currentSession.model = config?.model ?? currentSession.model
+        saveSession(currentSession)
+      }
+      currentSession = createSession(config?.model ?? 'unknown', wildMode)
+      sendResult(id ?? 0, {
+        sessionId: currentSession.id,
+        sessionTitle: currentSession.title,
+        messageCount: 0,
+      })
+      break
+    }
+
+    case 'session_switch': {
+      const targetId = params.id as string
+      if (!targetId) { sendError(id ?? 0, -32602, 'Missing session id'); return }
+      if (currentSession) {
+        currentSession.wildMode = wildMode
+        currentSession.model = config?.model ?? currentSession.model
+        saveSession(currentSession)
+      }
+      const loaded = loadSession(targetId)
+      if (!loaded) { sendError(id ?? 0, -32603, 'Session not found'); return }
+      currentSession = loaded
+      wildMode = loaded.wildMode
+      if (config && loaded.model) config.model = loaded.model
+      sendResult(id ?? 0, {
+        sessionId: currentSession.id,
+        sessionTitle: currentSession.title,
+        messageCount: currentSession.messages.length,
+        model: config?.model,
+        wildMode,
+        messages: serializeMessages(currentSession.messages),
+      })
+      break
+    }
+
+    case 'session_delete': {
+      const targetId = params.id as string
+      if (!targetId) { sendError(id ?? 0, -32602, 'Missing session id'); return }
+      deleteSession(targetId)
+      if (currentSession?.id === targetId) {
+        const remaining = listSessions()
+        if (remaining.length > 0) {
+          const loaded = loadSession(remaining[0].id)
+          if (loaded) {
+            currentSession = loaded
+            wildMode = loaded.wildMode
+            if (config && loaded.model) config.model = loaded.model
+          }
+        } else {
+          currentSession = createSession(config?.model ?? 'unknown', false)
+          wildMode = false
+        }
+      }
+      sendResult(id ?? 0, {
+        deleted: true,
+        sessionId: currentSession?.id,
+        sessionTitle: currentSession?.title,
+        messageCount: currentSession?.messages.length ?? 0,
+        messages: serializeMessages(currentSession?.messages ?? []),
+      })
+      break
+    }
+
+    case 'session_save': {
+      if (currentSession) {
+        currentSession.wildMode = wildMode
+        currentSession.model = config?.model ?? currentSession.model
+        saveSession(currentSession)
+      }
+      sendResult(id ?? 0, { saved: true })
+      break
+    }
+
     case 'chat': {
       if (!config) { sendError(id ?? 0, -32002, 'Not initialized'); return }
+      if (!currentSession) currentSession = createSession(config.model, wildMode)
       const prompt = params.prompt as string
       if (!prompt) { sendError(id ?? 0, -32602, 'Missing prompt'); return }
 
-      messages.push({ role: 'user', content: prompt })
+      currentSession.messages.push({ role: 'user', content: prompt })
 
       const chatId = id ?? ++requestId
       handleChat(chatId, prompt).catch((err: unknown) => {
@@ -141,6 +282,7 @@ async function handleMessage(line: string): Promise<void> {
     case 'set_model': {
       if (config) {
         config.model = params.model as string
+        if (currentSession) currentSession.model = config.model
         sendResult(id ?? 0, { model: config.model })
       }
       break
@@ -148,17 +290,23 @@ async function handleMessage(line: string): Promise<void> {
 
     case 'set_wild': {
       wildMode = (params.wild as boolean) ?? true
+      if (currentSession) currentSession.wildMode = wildMode
       sendResult(id ?? 0, { wildMode })
       break
     }
 
     case 'clear': {
-      messages.length = 0
+      if (currentSession) currentSession.messages.length = 0
       sendResult(id ?? 0, { cleared: true })
       break
     }
 
     case 'shutdown': {
+      if (currentSession) {
+        currentSession.wildMode = wildMode
+        currentSession.model = config?.model ?? currentSession.model
+        saveSession(currentSession)
+      }
       if (id) sendResult(id, { bye: true })
       clearInterval(keepalive)
       process.exit(0)
@@ -187,6 +335,8 @@ function isDangerous(command: string): boolean {
 
 async function handleChat(id: number, _prompt: string): Promise<void> {
   if (!config) { sendError(id, -32002, 'Not initialized'); return }
+  if (!currentSession) currentSession = createSession(config.model, wildMode)
+  const msgs = currentSession.messages
   const abortController = new AbortController()
   activeAbortController = abortController
 
@@ -201,7 +351,7 @@ async function handleChat(id: number, _prompt: string): Promise<void> {
 
       const streamResult = await streamResponse(
         config,
-        messages,
+        msgs,
         (text: string) => {
           responseText += text
           send({ method: 'stream/text', params: { text } })
@@ -226,7 +376,7 @@ async function handleChat(id: number, _prompt: string): Promise<void> {
       if (responseText) assistantBlocks.push({ type: 'text', text: responseText })
       for (const t of toolUses) assistantBlocks.push({ type: 'tool_use', id: t.id, name: t.name, input: t.input })
       if (assistantBlocks.length > 0) {
-        messages.push({ role: 'assistant', content: assistantBlocks })
+        msgs.push({ role: 'assistant', content: assistantBlocks })
       }
 
       if (toolUses.length === 0) break
@@ -258,7 +408,7 @@ async function handleChat(id: number, _prompt: string): Promise<void> {
 
       if (abortController.signal.aborted) break
 
-      messages.push({ role: 'user', content: toolResults })
+      msgs.push({ role: 'user', content: toolResults })
 
       // Send usage update
       send({ method: 'stream/usage', params: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens, cacheReadTokens: totalCacheReadTokens, requests } })
@@ -274,14 +424,22 @@ async function handleChat(id: number, _prompt: string): Promise<void> {
   // Send final usage
   send({ method: 'stream/usage', params: { inputTokens: totalInputTokens, outputTokens: totalOutputTokens, cacheReadTokens: totalCacheReadTokens, requests } })
 
+  // Auto-save session after chat
+  if (currentSession) {
+    currentSession.wildMode = wildMode
+    currentSession.model = config.model
+    saveSession(currentSession)
+  }
+
   // Auto-compact
   let compacted = false
   if (shouldCompact(totalInputTokens)) {
     try {
-      const result = await compactMessages(config, messages)
-      const removed = messages.length - result.messages.length
-      messages.length = 0
-      messages.push(...result.messages)
+      const result = await compactMessages(config, msgs)
+      const removed = msgs.length - result.messages.length
+      msgs.length = 0
+      msgs.push(...result.messages)
+      if (currentSession) saveSession(currentSession)
       compacted = true
       send({ method: 'stream/compacted', params: { removed, knowledgeSaved: result.knowledgeSaved } })
     } catch {}
@@ -298,7 +456,7 @@ function handleSlash(id: number, cmd: string): void {
 
   switch (lower) {
     case '/clear':
-      messages.length = 0
+      if (currentSession) currentSession.messages.length = 0
       sendResult(id, { type: 'system', message: 'Conversation cleared.' })
       break
     case '/wild':
@@ -335,6 +493,52 @@ function getVersion(): string {
   } catch {
     return '0.0.0'
   }
+}
+
+/** Build model list for the GUI, derived from config + known aliases */
+function buildModelList(config: Config): Array<{ alias: string; id: string }> {
+  type ModelEntry = { alias: string; id: string }
+  const models: ModelEntry[] = []
+
+  // Anthropic models (always available via main api_key)
+  models.push(
+    { alias: 'Opus 4', id: 'claude-opus-4-6' },
+    { alias: 'Sonnet 4', id: 'claude-sonnet-4-6' },
+    { alias: 'Haiku 4.5', id: 'claude-haiku-4-5-latest' },
+  )
+
+  // OpenAI models (if openai provider configured)
+  if (config.providers?.openai) {
+    models.push(
+      { alias: 'GPT-4o', id: 'gpt-4o' },
+      { alias: 'o3', id: 'o3' },
+      { alias: 'o4-mini', id: 'o4-mini' },
+    )
+  }
+
+  // Zhipu/GLM models (if zhipu provider configured)
+  if (config.providers?.zhipu) {
+    models.push(
+      { alias: 'GLM-5.2', id: 'glm-5.2' },
+      { alias: 'GLM-5.1', id: 'glm-5.1' },
+      { alias: 'GLM-5', id: 'glm-5' },
+      { alias: 'GLM-4.5', id: 'glm-4.5' },
+    )
+  }
+
+  // Add any custom provider models
+  for (const [key, prov] of Object.entries(config.providers ?? {})) {
+    if (key === 'anthropic' || key === 'openai' || key === 'zhipu') continue
+    // Add a generic entry for unknown providers
+    models.push({ alias: key, id: key })
+  }
+
+  // Ensure the current model is in the list
+  if (!models.some(m => m.id === config.model)) {
+    models.unshift({ alias: config.model, id: config.model })
+  }
+
+  return models
 }
 
 // -- Signal handling --

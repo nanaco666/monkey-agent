@@ -1,39 +1,27 @@
 import SwiftUI
 
-/// Native macOS toolbar with model picker.
+/// Native macOS toolbar with model picker using system Picker.
+/// System renders it as a proper menu button showing the selected model name.
 struct MonkeyToolbar: ToolbarContent {
     @Bindable var store: ChatStore
-    @Environment(\.colorScheme) private var colorScheme
 
     var body: some ToolbarContent {
-        ToolbarItemGroup(placement: .primaryAction) {
-            modelPicker
+        ToolbarItem(placement: .primaryAction) {
+            Picker(selection: $store.displayModel) {
+                ForEach(models, id: \.id) { item in
+                    Text(item.alias).tag(item.id)
+                }
+            } label: {
+                Label("Model", systemImage: "monkey")
+            }
+            .pickerStyle(.menu)
+            .onChange(of: store.displayModel) { _, newValue in
+                store.switchModel(newValue)
+            }
         }
     }
 
-    // MARK: - Model Picker
-
-    private var modelPicker: some View {
-        Menu {
-            ForEach(ModelRegistry.all, id: \.0) { alias, model in
-                Button {
-                    store.switchModel(model)
-                } label: {
-                    if model == store.displayModel {
-                        Text("✓ \(alias)")
-                    } else {
-                        Text(alias)
-                    }
-                }
-            }
-        } label: {
-            HStack(spacing: 4) {
-                Text("🍌")
-                    .font(.caption2)
-                Text(store.displayModel)
-                    .lineLimit(1)
-                    .font(.caption)
-            }
-        }
+    private var models: [(alias: String, id: String)] {
+        store.availableModels.isEmpty ? ModelRegistry.fallback : store.availableModels
     }
 }

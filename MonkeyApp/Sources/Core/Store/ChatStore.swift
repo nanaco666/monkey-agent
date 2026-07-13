@@ -12,13 +12,20 @@ final class ChatStore: @unchecked Sendable {
     var usage = UsageInfo()
     var displayModel = "…"
     var assistantName = "Monkey"
+    var availableModels: [(alias: String, id: String)] = []
     var isConnected = false
+    var sessionStore = SessionStore()
 
     // MARK: - Dependencies
     private let transport: UnixSocketTransport
     private var nextRequestId = 1
     private var activeChatRequestIds: Set<Int> = []
     private var pendingInitId: Int? = nil
+    private var pendingSessionListId: Int? = nil
+    private var pendingSessionSwitchId: Int? = nil
+    private var pendingSessionNewId: Int? = nil
+    private var pendingSessionDeleteId: Int? = nil
+    private var saveDebounceTask: Task<Void, Never>?
 
     // MARK: - Init
 
@@ -51,8 +58,72 @@ final class ChatStore: @unchecked Sendable {
     }
 
     func stop() {
+        saveCurrentSession()
         transport.disconnect()
         isConnected = false
+    }
+
+    // MARK: - Session Management
+
+    /// Load the current session's messages into the store
+    func loadCurrentSession() {
+        guard let session = sessionStore.currentSession else {
+            messages = []
+            return
+        }
+        // Messages come from daemon on initialize/session_switch response
+        // Just set model/wildMode from session metadata
+        displayModel = session.model.isEmpty ? displayModel : session.model
+        wildMode = session.wildMode
+    }
+
+    /// Request session list from daemon
+    func refreshSessions() {
+        guard isConnected else { return }
+        let id = sendRequest("session_list", params: [:])
+        pendingSessionListId = id
+    }
+
+    /// Switch to an existing session (via daemon RPC)
+    func switchSession(_ id: String) {
+        guard isConnected else { return }
+        // Save current session first
+        sendNotification("session_save", params: [:])
+        let reqId = sendRequest("session_switch", params: ["id": id])
+        pendingSessionSwitchId = reqId
+    }
+
+    /// Start a new chat session (via daemon RPC)
+    func newSession() {
+        guard isConnected else { return }
+        sendNotification("session_save", params: [:])
+        let reqId = sendRequest("session_new", params: [:])
+        pendingSessionNewId = reqId
+    }
+
+    /// Delete a session (via daemon RPC)
+    func deleteSession(_ id: String) {
+        guard isConnected else { return }
+        let reqId = sendRequest("session_delete", params: ["id": id])
+        pendingSessionDeleteId = reqId
+    }
+
+    /// Debounced save — coalesces rapid updates (e.g. streaming) into one write
+    func scheduleSave() {
+        saveDebounceTask?.cancel()
+        saveDebounceTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1))
+            guard !Task.isCancelled else { return }
+            // Tell daemon to save
+            if isConnected { sendNotification("session_save", params: [:]) }
+        }
+    }
+
+    /// Persist current messages — now just tells daemon to save
+    func saveCurrentSession() {
+        saveDebounceTask?.cancel()
+        guard isConnected else { return }
+        sendNotification("session_save", params: [:])
     }
 
     // MARK: - Daemon launcher
@@ -93,6 +164,7 @@ final class ChatStore: @unchecked Sendable {
 
         messages.append(ChatMessage(role: .user, content: text))
         isStreaming = true
+        scheduleSave()
 
         let chatId = sendRequest("chat", params: ["prompt": text])
         activeChatRequestIds.insert(chatId)
@@ -131,6 +203,7 @@ final class ChatStore: @unchecked Sendable {
     func clearConversation() {
         messages.removeAll()
         if isConnected { _ = sendRequest("clear", params: [:]) }
+        scheduleSave()
     }
 
     func abortResponse() {
@@ -173,7 +246,123 @@ final class ChatStore: @unchecked Sendable {
             if let result {
                 displayModel = result["model"] as? String ?? "unknown"
                 assistantName = result["name"] as? String ?? "Monkey"
+                if let models = result["models"] as? [[String: String]] {
+                    availableModels = models.compactMap { item in
+                        guard let alias = item["alias"], let id = item["id"] else { return nil }
+                        return (alias: alias, id: id)
+                    }
+                }
+                if let sessionId = result["sessionId"] as? String {
+                    sessionStore.setCurrent(sessionId)
+                }
+                // Load existing session messages
+                if let rawMessages = result["messages"] as? [[String: Any]] {
+                    for raw in rawMessages {
+                        let role = raw["role"] as? String ?? "user"
+                        let content = raw["content"] as? String ?? ""
+                        let toolName = raw["toolName"] as? String
+                        let toolId = raw["toolId"] as? String
+                        if role == "tool" {
+                            var msg = ChatMessage(role: .tool, content: content, toolName: toolName, toolId: toolId)
+                            msg.isStreaming = false
+                            messages.append(msg)
+                        } else if role == "user" {
+                            messages.append(ChatMessage(role: .user, content: content))
+                        } else if role == "assistant" {
+                            messages.append(ChatMessage(role: .assistant, content: content))
+                        }
+                    }
+                }
                 isConnected = true
+                // Fetch session list for sidebar
+                refreshSessions()
+            }
+            return
+        }
+
+        // Session list response
+        if id == pendingSessionListId {
+            pendingSessionListId = nil
+            if let result, let rawSessions = result["sessions"] as? [[String: Any]] {
+                let metas = rawSessions.map { ChatSessionMeta(from: $0) }
+                sessionStore.updateSessions(metas)
+            }
+            return
+        }
+
+        // Session new response
+        if id == pendingSessionNewId {
+            pendingSessionNewId = nil
+            if let result, let sessionId = result["sessionId"] as? String {
+                messages.removeAll()
+                sessionStore.setCurrent(sessionId)
+                if isConnected { _ = sendRequest("clear", params: [:]) }
+                refreshSessions()
+            }
+            return
+        }
+
+        // Session switch response
+        if id == pendingSessionSwitchId {
+            pendingSessionSwitchId = nil
+            if let result {
+                if let sessionId = result["sessionId"] as? String {
+                    sessionStore.setCurrent(sessionId)
+                }
+                if let model = result["model"] as? String { displayModel = model }
+                if let wild = result["wildMode"] as? Bool { wildMode = wild }
+                messages.removeAll()
+                // Load historical messages from daemon
+                if let rawMessages = result["messages"] as? [[String: Any]] {
+                    for raw in rawMessages {
+                        let role = raw["role"] as? String ?? "user"
+                        let content = raw["content"] as? String ?? ""
+                        let toolName = raw["toolName"] as? String
+                        let toolId = raw["toolId"] as? String
+                        if role == "tool" {
+                            var msg = ChatMessage(role: .tool, content: content, toolName: toolName, toolId: toolId)
+                            msg.isStreaming = false
+                            messages.append(msg)
+                        } else if role == "user" {
+                            messages.append(ChatMessage(role: .user, content: content))
+                        } else if role == "assistant" {
+                            messages.append(ChatMessage(role: .assistant, content: content))
+                        }
+                    }
+                }
+                refreshSessions()
+            }
+            return
+        }
+
+        // Session delete response
+        if id == pendingSessionDeleteId {
+            pendingSessionDeleteId = nil
+            if let result {
+                if let sessionId = result["sessionId"] as? String {
+                    sessionStore.setCurrent(sessionId)
+                }
+                if let model = result["model"] as? String { displayModel = model }
+                if let wild = result["wildMode"] as? Bool { wildMode = wild }
+                messages.removeAll()
+                if let rawMessages = result["messages"] as? [[String: Any]] {
+                    for raw in rawMessages {
+                        let role = raw["role"] as? String ?? "user"
+                        let content = raw["content"] as? String ?? ""
+                        let toolName = raw["toolName"] as? String
+                        let toolId = raw["toolId"] as? String
+                        if role == "tool" {
+                            var msg = ChatMessage(role: .tool, content: content, toolName: toolName, toolId: toolId)
+                            msg.isStreaming = false
+                            messages.append(msg)
+                        } else if role == "user" {
+                            messages.append(ChatMessage(role: .user, content: content))
+                        } else if role == "assistant" {
+                            messages.append(ChatMessage(role: .assistant, content: content))
+                        }
+                    }
+                }
+                refreshSessions()
             }
             return
         }
@@ -183,6 +372,8 @@ final class ChatStore: @unchecked Sendable {
             activeChatRequestIds.remove(id)
             isStreaming = false
             finalizeStreamingMessages()
+            // Refresh session list to update sidebar previews
+            refreshSessions()
             return
         }
 
@@ -226,6 +417,7 @@ final class ChatStore: @unchecked Sendable {
                 msg.toolId = id
                 messages.append(msg)
             }
+            scheduleSave()
 
         case "stream/usage":
             if let input = params["inputTokens"] as? Int { usage.inputTokens = input }
@@ -268,6 +460,7 @@ final class ChatStore: @unchecked Sendable {
         for i in messages.indices {
             if messages[i].isStreaming { messages[i].isStreaming = false }
         }
+        scheduleSave()
     }
 
     // MARK: - JSON-RPC Transport

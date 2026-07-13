@@ -18,6 +18,7 @@ import { findCommand, ALL_PICKER_ENTRIES, type PickerEntry } from '../commands/i
 import type { ContentBlock } from '../providers/index.js'
 import { detectProvider as detectProviderFn, getProviderForModel as getProviderFn } from '../providers/index.js'
 import { calculateCost } from './pricing.js'
+import { listSessions, loadSession, saveSession, createSession, deleteSession, type Session } from '../session/store.js'
 import { clipboardHasImage, saveClipboardImage, imageToBase64, ocrImageFile, cleanupTempImage } from './ocr.js'
 
 const PROMPT = chalk.bold.rgb(232, 98, 42)('❯ ')
@@ -37,9 +38,11 @@ const MODEL_ALIASES: Record<string, string> = {
   'o3':      'o3',
   'o4-mini': 'o4-mini',
   // 智谱
-  'glm':     'glm-4.5',
+  'glm':     'glm-5.2',
   'glm4':    'glm-4.5',
   'glm5':    'glm-5',
+  'glm52':   'glm-5.2',
+  'glm51':   'glm-5.1',
 }
 
 function resolveModel(input: string): string | null {
@@ -528,9 +531,19 @@ function disableInterrupt(): void {
 }
 
 export async function startRepl(config: Config): Promise<void> {
-  const messages: Message[] = []
+  // Session-aware REPL: load most recent session or create new
+  let currentSession: Session = (() => {
+    const sessions = listSessions()
+    if (sessions.length > 0) {
+      const loaded = loadSession(sessions[0].id)
+      if (loaded) return loaded
+    }
+    return createSession(config.model, false)
+  })()
+
+  let messages: Message[] = currentSession.messages
   let memoryContext = ''
-  let wildMode = false
+  let wildMode = currentSession.wildMode
   const usage: TokenUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, requests: 0 }
 
   const trackUsage = (result: { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreationTokens: number }) => {
@@ -566,7 +579,75 @@ export async function startRepl(config: Config): Promise<void> {
 
     if (cmd === '/clear') {
       messages.length = 0
+      currentSession.messages = messages
+      saveSession(currentSession)
       console.log(chalk.rgb(100, 181, 246)('\n  ✦ Conversation cleared.\n'))
+      return true
+    }
+    if (cmd === '/sessions' || cmd.startsWith('/sessions ')) {
+      const arg = input.trim().slice('/sessions'.length).trim()
+      if (!arg) {
+        // List all sessions
+        const sessions = listSessions()
+        if (sessions.length === 0) {
+          console.log(chalk.dim('\n  no sessions\n'))
+          return true
+        }
+        console.log(chalk.rgb(245, 242, 235)('\n  Sessions:'))
+        sessions.forEach((s, i) => {
+          const marker = s.id === currentSession.id ? chalk.rgb(232, 98, 42)('▸ ') : '  '
+          const date = s.updatedAt ? new Date(s.updatedAt).toLocaleDateString('en', { month: 'short', day: 'numeric' }) : '?'
+          console.log(`  ${marker}${chalk.dim(`${i + 1}.`)} ${s.title} ${chalk.dim(`(${s.messageCount} msgs, ${date})`)}`)
+        })
+        console.log(chalk.dim('\n  /sessions <n>  switch  ·  /sessions new  ·  /sessions del <n>\n'))
+        return true
+      }
+      if (arg === 'new') {
+        // Save current and create new
+        currentSession.wildMode = wildMode
+        currentSession.model = config.model
+        saveSession(currentSession)
+        currentSession = createSession(config.model, wildMode)
+        messages = currentSession.messages
+        console.log(chalk.rgb(100, 181, 246)('\n  ✦ New session\n'))
+        return true
+      }
+      if (arg.startsWith('del ')) {
+        const idx = parseInt(arg.slice(4)) - 1
+        const sessions = listSessions()
+        if (idx < 0 || idx >= sessions.length) {
+          console.log(chalk.red('\n  invalid session number\n'))
+          return true
+        }
+        const target = sessions[idx]
+        if (target.id === currentSession.id) {
+          console.log(chalk.red('\n  cannot delete current session, switch first\n'))
+          return true
+        }
+        deleteSession(target.id)
+        console.log(chalk.rgb(100, 181, 246)(`\n  ✦ Deleted: ${target.title}\n`))
+        return true
+      }
+      // Switch by number
+      const idx = parseInt(arg) - 1
+      const sessions = listSessions()
+      if (idx < 0 || idx >= sessions.length) {
+        console.log(chalk.red('\n  invalid session number\n'))
+        return true
+      }
+      const target = sessions[idx]
+      currentSession.wildMode = wildMode
+      currentSession.model = config.model
+      saveSession(currentSession)
+      const loaded = loadSession(target.id)
+      if (!loaded) {
+        console.log(chalk.red('\n  failed to load session\n'))
+        return true
+      }
+      currentSession = loaded
+      messages = currentSession.messages
+      wildMode = currentSession.wildMode
+      console.log(chalk.rgb(100, 181, 246)(`\n  ✦ Switched to: ${currentSession.title} (${messages.length} msgs)\n`))
       return true
     }
     if (cmd === '/wild') {
@@ -587,6 +668,7 @@ export async function startRepl(config: Config): Promise<void> {
         '  /memory  view and manage memory',
         '',
         '  /clear   clear conversation history',
+        '  /sessions  list, switch, or create sessions',
         '  /model   show or switch model (sonnet, opus, 4o, glm...)',
         '  /img     attach clipboard image as vision message',
         '  Ctrl+V  paste clipboard image into input as [image]',
@@ -960,6 +1042,12 @@ export async function startRepl(config: Config): Promise<void> {
           process.stdout.write('\n')
           appendSession({ ts: new Date().toISOString(), role: 'assistant', content: responseText })
         }
+
+        // Auto-save session
+        currentSession.messages = messages
+        currentSession.wildMode = wildMode
+        currentSession.model = config.model
+        saveSession(currentSession)
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const assistantBlocks: any[] = []

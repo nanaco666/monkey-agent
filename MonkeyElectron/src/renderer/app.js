@@ -21,8 +21,10 @@ const MODELS = [
   ['GPT-4o',   'gpt-4o'],
   ['o3',       'o3'],
   ['o4-mini',  'o4-mini'],
-  ['GLM-5',    'glm-5'],
-  ['GLM-4.5',  'glm-4.5'],
+  ['GLM-5.2', 'glm-5.2'],
+  ['GLM-5.1', 'glm-5.1'],
+  ['GLM-5',   'glm-5'],
+  ['GLM-4.5', 'glm-4.5'],
 ]
 
 const SLASH_COMMANDS = [
