@@ -145,6 +145,7 @@ async function handleMessage(line: string): Promise<void> {
         sessionId: currentSession.id,
         sessionTitle: currentSession.title,
         models: getAvailableModels(config!),
+        messages: serializeMessages(currentSession.messages),
       })
       break
     }
@@ -283,7 +284,9 @@ async function handleMessage(line: string): Promise<void> {
         saveSession(currentSession)
       }
       if (id) sendResult(id, { bye: true })
-      // Don't exit — just acknowledge. Daemon keeps running.
+      if (server) server.close()
+      try { fs.unlinkSync(SOCKET_PATH) } catch { /* ok */ }
+      process.exit(0)
       break
     }
 
@@ -499,8 +502,10 @@ export function startDaemon(): void {
   boot()
 }
 
+let server: net.Server | null = null
+
 function boot(): void {
-  const server = net.createServer((socket) => {
+  server = net.createServer((socket) => {
     // Accept new GUI connection, drop previous
     if (activeSocket) {
       try { activeSocket.destroy() } catch { /* ok */ }
@@ -542,7 +547,7 @@ function boot(): void {
   })
 
   const cleanup = () => {
-    server.close()
+    server?.close()
     try { fs.unlinkSync(SOCKET_PATH) } catch { /* ok */ }
     process.exit(0)
   }

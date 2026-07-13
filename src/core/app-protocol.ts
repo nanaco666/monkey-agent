@@ -162,6 +162,7 @@ async function handleMessage(line: string): Promise<void> {
         sessionId: currentSession.id,
         sessionTitle: currentSession.title,
         messageCount: currentSession.messages.length,
+        messages: serializeMessages(currentSession.messages),
       })
       break
 
