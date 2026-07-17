@@ -79,6 +79,7 @@ struct MessageAttachment: Identifiable, Codable {
     let fileSize: String?      // e.g. "2.4 MB"
     let state: AttachmentState
     let imageData: Data?       // For image previews
+    let textContent: String?   // For text files — content sent to LLM
     let url: String?           // For clickable links
 
     enum AttachmentState {
@@ -90,7 +91,7 @@ struct MessageAttachment: Identifiable, Codable {
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, fileType, fileSize, url
+        case id, name, fileType, fileSize, textContent, url
     }
 
     init(
@@ -100,6 +101,7 @@ struct MessageAttachment: Identifiable, Codable {
         fileSize: String? = nil,
         state: AttachmentState = .done,
         imageData: Data? = nil,
+        textContent: String? = nil,
         url: String? = nil
     ) {
         self.id = id
@@ -108,6 +110,7 @@ struct MessageAttachment: Identifiable, Codable {
         self.fileSize = fileSize
         self.state = state
         self.imageData = imageData
+        self.textContent = textContent
         self.url = url
     }
 
@@ -117,6 +120,7 @@ struct MessageAttachment: Identifiable, Codable {
         name = try c.decode(String.self, forKey: .name)
         fileType = try c.decode(String.self, forKey: .fileType)
         fileSize = try c.decodeIfPresent(String.self, forKey: .fileSize)
+        textContent = try c.decodeIfPresent(String.self, forKey: .textContent)
         url = try c.decodeIfPresent(String.self, forKey: .url)
         state = .done
         imageData = nil
@@ -128,6 +132,7 @@ struct MessageAttachment: Identifiable, Codable {
         try c.encode(name, forKey: .name)
         try c.encode(fileType, forKey: .fileType)
         try c.encodeIfPresent(fileSize, forKey: .fileSize)
+        try c.encodeIfPresent(textContent, forKey: .textContent)
         try c.encodeIfPresent(url, forKey: .url)
     }
 

@@ -226,18 +226,38 @@ final class ChatStore: @unchecked Sendable {
 
     // MARK: - Public Actions
 
-    func sendMessage(_ text: String) async {
+    func sendMessage(_ text: String, attachments: [MessageAttachment] = []) async {
         guard isConnected else {
             appendSystemMessage("Monkey is not connected. Please wait…")
             return
         }
         guard !isStreaming else { return }
 
-        messages.append(ChatMessage(role: .user, content: text))
+        messages.append(ChatMessage(role: .user, content: text, attachments: attachments))
         isStreaming = true
         scheduleSave()
 
-        let chatId = sendRequest("chat", params: ["prompt": text])
+        // Build chat params — include attachments as base64 for the LLM
+        var params: [String: Any] = ["prompt": text]
+        if !attachments.isEmpty {
+            params["attachments"] = attachments.map { att in
+                var dict: [String: Any] = [
+                    "name": att.name,
+                    "fileType": att.fileType,
+                ]
+                if let data = att.imageData {
+                    dict["data"] = data.base64EncodedString()
+                    dict["mediaType"] = att.fileType.uppercased() == "PNG" ? "image/png" : "image/jpeg"
+                    dict["isImage"] = true
+                }
+                if let content = att.textContent {
+                    dict["content"] = content
+                    dict["isImage"] = false
+                }
+                return dict
+            }
+        }
+        let chatId = sendRequest("chat", params: params)
         activeChatRequestIds.insert(chatId)
     }
 

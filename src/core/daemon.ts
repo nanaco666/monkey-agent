@@ -60,6 +60,9 @@ function serializeMessages(msgs: Message[]): JsonDict[] {
       for (const block of m.content as ContentBlock[]) {
         if (block.type === 'text') {
           text += block.text
+        } else if (block.type === 'image') {
+          // Skip image data in serialization — too large for GUI transport
+          result.push({ role: 'tool', content: '[image]', toolName: 'image' })
         } else if (block.type === 'tool_use') {
           isTool = true
           toolName = block.name
@@ -241,8 +244,39 @@ async function handleMessage(line: string): Promise<void> {
       if (!config) { sendError(id ?? 0, -32002, 'Not initialized'); return }
       if (!currentSession) currentSession = createSession(config.model, wildMode)
       const prompt = params.prompt as string
-      if (!prompt) { sendError(id ?? 0, -32602, 'Missing prompt'); return }
-      currentSession.messages.push({ role: 'user', content: prompt })
+      const attachments = params.attachments as Array<Record<string, unknown>> | undefined
+      if (!prompt && !attachments) { sendError(id ?? 0, -32602, 'Missing prompt'); return }
+
+      // Build user message — if attachments contain images, use ContentBlock[]
+      const userBlocks: ContentBlock[] = []
+      if (prompt) userBlocks.push({ type: 'text', text: prompt })
+
+      if (attachments && attachments.length > 0) {
+        for (const att of attachments) {
+          if (att.isImage === true && att.data && att.mediaType) {
+            userBlocks.push({
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: att.mediaType as string,
+                data: att.data as string,
+              },
+            })
+          } else if (att.content) {
+            // Text file content already loaded by the client
+            userBlocks.push({ type: 'text', text: `\n[File: ${att.name}]\n${att.content}` })
+          }
+        }
+      }
+
+      if (userBlocks.length === 1 && userBlocks[0].type === 'text') {
+        currentSession.messages.push({ role: 'user', content: prompt })
+      } else if (userBlocks.length > 0) {
+        currentSession.messages.push({ role: 'user', content: userBlocks as never })
+      } else {
+        currentSession.messages.push({ role: 'user', content: prompt ?? '' })
+      }
+
       handleChat(id ?? ++requestId).catch((err: unknown) => {
         sendError(id ?? 0, -32603, String(err))
       })
