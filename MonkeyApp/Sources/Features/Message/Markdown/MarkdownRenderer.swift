@@ -183,6 +183,14 @@ struct ParsedTable {
 }
 
 enum FullMarkdownParser {
+    /// Check if two runs belong to the same block (same structural identity).
+    /// Without this, "**bold**：text" splits into two separate paragraphs/lines.
+    private static func sameBlock(_ a: PresentationIntent?, _ b: PresentationIntent?) -> Bool {
+        guard let a, let b else { return a == nil && b == nil }
+        guard a.components.count == b.components.count else { return false }
+        return zip(a.components, b.components).allSatisfy { $0.identity == $1.identity }
+    }
+
     static func parse(_ source: String) -> [MarkdownElement] {
         guard let fullAttr = try? AttributedString(
             markdown: source,
@@ -191,14 +199,25 @@ enum FullMarkdownParser {
             return [.paragraph(AttributedString(source))]
         }
 
+        // Pre-merge consecutive runs with the same block-level presentation intent.
+        // Inline style changes (bold, italic, etc.) create separate runs even
+        // within the same paragraph — without merging, each becomes its own line.
+        var merged: [(attr: AttributedString, intent: PresentationIntent?)] = []
+        for run in fullAttr.runs {
+            let slice = AttributedString(fullAttr[run.range])
+            let intent = run.presentationIntent
+            if let last = merged.last, sameBlock(last.intent, intent) {
+                merged[merged.count - 1].attr += slice
+            } else {
+                merged.append((slice, intent))
+            }
+        }
+
         var elements: [MarkdownElement] = []
         var currentTableId: Int? = nil
         var tableData = ParsedTable(columns: [], rows: [])
 
-        for run in fullAttr.runs {
-            let attrSlice = AttributedString(fullAttr[run.range])
-            let intent = run.presentationIntent
-
+        for (attrSlice, intent) in merged {
             guard let intent else {
                 elements.append(.paragraph(attrSlice))
                 continue
