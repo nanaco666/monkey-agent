@@ -114,8 +114,7 @@ struct InputBar: View {
     }
 
     private var canSend: Bool {
-        (!inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty)
-        && store.isConnected
+        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !pendingAttachments.isEmpty
     }
 
     @ViewBuilder
