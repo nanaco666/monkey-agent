@@ -66,16 +66,82 @@ final class ChatStore: @unchecked Sendable {
 
     // MARK: - Session Management
 
-    /// Load the current session's messages into the store
+    /// Load the current session's messages into the store.
+    /// Reads directly from the session JSON file on disk so messages
+    /// appear instantly on startup without waiting for the daemon.
     func loadCurrentSession() {
         guard let session = sessionStore.currentSession else {
             messages = []
             return
         }
-        // Messages come from daemon on initialize/session_switch response
-        // Just set model/wildMode from session metadata
         displayModel = session.model.isEmpty ? displayModel : session.model
         wildMode = session.wildMode
+
+        // Load messages from disk for instant display
+        let path = NSHomeDirectory() + "/.monkey-cli/sessions/" + session.id + ".json"
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let rawMessages = dict["messages"] as? [[String: Any]]
+        else { return }
+
+        messages.removeAll()
+        for raw in rawMessages {
+            let role = raw["role"] as? String ?? "user"
+            let content = raw["content"]
+            // content can be a string or an array of content blocks
+            if let text = content as? String {
+                appendParsedMessage(role: role, content: text, raw: raw)
+            } else if let blocks = content as? [[String: Any]] {
+                // Extract text from content blocks
+                var text = ""
+                for block in blocks {
+                    if let t = block["text"] as? String { text += t }
+                    if block["type"] as? String == "tool_use" {
+                        let name = block["name"] as? String ?? "tool"
+                        let input = block["input"] as? [String: Any] ?? [:]
+                        let summary = String(describing: input["command"] ?? input["path"] ?? input["pattern"] ?? "").prefix(60)
+                        if !text.isEmpty {
+                            appendParsedMessage(role: role, content: text, raw: raw)
+                            text = ""
+                        }
+                        var msg = ChatMessage(role: .tool, content: String(summary), toolName: name)
+                        msg.toolId = block["id"] as? String
+                        msg.isStreaming = false
+                        messages.append(msg)
+                    }
+                    if block["type"] as? String == "tool_result" {
+                        let result = block["content"] as? String ?? ""
+                        let display = result.count > 300 ? String(result.prefix(300)) + "…" : result
+                        var msg = ChatMessage(role: .tool, content: display)
+                        msg.toolId = block["tool_use_id"] as? String
+                        msg.isStreaming = false
+                        messages.append(msg)
+                    }
+                }
+                if !text.isEmpty {
+                    appendParsedMessage(role: role, content: text, raw: raw)
+                }
+            }
+        }
+    }
+
+    private func appendParsedMessage(role: String, content: String, raw: [String: Any]) {
+        let toolName = raw["toolName"] as? String
+        let toolId = raw["toolId"] as? String
+        let msgRole: MessageRole
+        switch role {
+        case "user": msgRole = .user
+        case "assistant": msgRole = .assistant
+        case "tool": msgRole = .tool
+        default: msgRole = .user
+        }
+        if msgRole == .tool {
+            var msg = ChatMessage(role: .tool, content: content, toolName: toolName, toolId: toolId)
+            msg.isStreaming = false
+            messages.append(msg)
+        } else {
+            messages.append(ChatMessage(role: msgRole, content: content))
+        }
     }
 
     /// Request session list from daemon
