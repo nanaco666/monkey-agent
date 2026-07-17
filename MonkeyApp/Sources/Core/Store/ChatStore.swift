@@ -53,6 +53,7 @@ final class ChatStore: @unchecked Sendable {
     // MARK: - Lifecycle
 
     func start() {
+        sessionStore.loadCache()
         launchDaemonIfNeeded()
         transport.connect()
     }
