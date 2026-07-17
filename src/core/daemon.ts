@@ -148,7 +148,6 @@ async function handleMessage(line: string): Promise<void> {
         sessionId: currentSession.id,
         sessionTitle: currentSession.title,
         models: getAvailableModels(config!),
-        messages: serializeMessages(currentSession.messages),
       })
       break
     }

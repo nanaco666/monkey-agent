@@ -98,9 +98,13 @@ final class UnixSocketTransport: @unchecked Sendable {
     }
 
     private func handleEOF() {
+        let wasConnected = fd >= 0
         closeSocket()
         onDisconnect?()
-        scheduleReconnect()
+        // Only reconnect if we had a real connection (not a probe/failed attempt)
+        if wasConnected {
+            scheduleReconnect()
+        }
     }
 
     private func closeSocket() {

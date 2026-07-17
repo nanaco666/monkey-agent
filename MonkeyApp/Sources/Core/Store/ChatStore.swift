@@ -54,8 +54,13 @@ final class ChatStore: @unchecked Sendable {
 
     func start() {
         sessionStore.loadCache()
-        launchDaemonIfNeeded()
         transport.connect()
+        // Delay daemon launch slightly so our own connection is established first.
+        // If we launch a new daemon simultaneously, its probe connection can
+        // kick our connection via the daemon's "drop previous" logic.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.launchDaemonIfNeeded()
+        }
     }
 
     func stop() {
