@@ -151,11 +151,15 @@ final class ChatStore: @unchecked Sendable {
         pendingSessionListId = id
     }
 
-    /// Switch to an existing session (via daemon RPC)
+    /// Switch to an existing session (via daemon RPC).
+    /// Loads messages from disk immediately so the UI is never empty,
+    /// daemon response will update/confirm afterwards.
     func switchSession(_ id: String) {
-        guard isConnected else { return }
-        // Save current session first
+        sessionStore.setCurrent(id)
+        loadCurrentSession()  // instant display from disk
+        // Save current session first, then notify daemon
         sendNotification("session_save", params: [:])
+        guard isConnected else { return }
         let reqId = sendRequest("session_switch", params: ["id": id])
         pendingSessionSwitchId = reqId
     }
