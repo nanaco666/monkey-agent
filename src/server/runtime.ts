@@ -7,6 +7,7 @@ import { executeTool } from '../tools/index.js'
 import type { ContentBlock } from '../providers/types.js'
 import { createSession, loadSession, saveSession, deleteSession, listSessions, type Session } from '../session/store.js'
 import { findCommand } from '../commands/index.js'
+import { KeyboardService } from '../keyboard/service.js'
 
 export type Data = Record<string, any>
 export class RpcError extends Error {
@@ -56,7 +57,8 @@ export class MonkeyRuntime {
   private sessions = new Map<string, Session>()
   private runs = new Map<string, Run>()
   private listeners = new Set<(event: Data) => void>()
-  constructor(private config: Config, private memory = '', private deps = { stream: streamResponse, tool: executeTool }) {}
+  private keyboard: KeyboardService
+  constructor(private config: Config, private memory = '', private deps = { stream: streamResponse, tool: executeTool }) { this.keyboard = new KeyboardService(config) }
   subscribe(listener: (event: Data) => void) { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   private emit(method: string, params: Data) { for (const listener of this.listeners) listener({ jsonrpc: '2.0', method, params }) }
   private session(id: unknown): Session {
@@ -90,6 +92,10 @@ export class MonkeyRuntime {
         models: [...new Set([this.config.model, this.config.fast_model])].map(id => ({ id, alias: id })),
         capabilities: { attachments: true, approvals: true, concurrentSessions: true }, memoryLoaded: !!this.memory }
     }
+    if (method === 'keyboard_profile_get') return { profile: this.keyboard.profile() }
+    if (method === 'keyboard_profile_save') return { profile: this.keyboard.save(params.profile) }
+    if (method === 'keyboard_remember') return { profile: this.keyboard.remember(params.note) }
+    if (method === 'keyboard_generate') return this.keyboard.generate(params)
     if (method === 'session_list') return { sessions: listSessions() }
     if (method === 'session_new') {
       const session = createSession(this.config.model, false)
@@ -126,6 +132,13 @@ export class MonkeyRuntime {
         const blocks = attachments(params.attachments)
         let prompt = typeof params.prompt === 'string' ? params.prompt.trim() : ''
         if (prompt.length > MAX_TEXT || (!prompt && !blocks.length)) throw new RpcError(-32602, '请输入消息')
+        const keyboardNote = /^(?:\/keyboard-note\s+|记住键盘偏好[：:]\s*)([\s\S]+)$/.exec(prompt)
+        if (keyboardNote) {
+          this.keyboard.remember(keyboardNote[1])
+          session.messages.push({ role: 'user', content: prompt }, { role: 'assistant', content: '已保存到 Monkey Keyboard 偏好，之后生成候选会使用。可以在键盘 App 的偏好设置中查看和修改。' })
+          this.changed(session)
+          return { accepted: true, completed: true }
+        }
         let allowedTools: string[] | undefined
         if (prompt.startsWith('/')) {
           const [name, ...rest] = prompt.slice(1).split(/\s+/)
