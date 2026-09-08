@@ -6,7 +6,7 @@
  * This is the single source of truth shared by CLI, daemon, and macOS app.
  */
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync, statSync } from 'fs'
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, unlinkSync, renameSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 import { randomUUID } from 'crypto'
@@ -26,13 +26,14 @@ export interface Session extends SessionMeta {
   messages: Message[]
 }
 
-const SESSIONS_DIR = join(homedir(), '.monkey-cli', 'sessions')
+const SESSIONS_DIR = join(process.env.MONKEY_DATA_DIR || join(homedir(), '.monkey-cli'), 'sessions')
 
 function ensureDir(): void {
   if (!existsSync(SESSIONS_DIR)) mkdirSync(SESSIONS_DIR, { recursive: true })
 }
 
 function sessionPath(id: string): string {
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id)) throw new Error('Invalid session id')
   return join(SESSIONS_DIR, `${id}.json`)
 }
 
@@ -94,7 +95,11 @@ export function saveSession(session: Session): void {
     s.title = autoTitle(s.messages)
   }
   s.updatedAt = new Date().toISOString()
-  writeFileSync(sessionPath(s.id), JSON.stringify(s, null, 2), 'utf-8')
+  const target = sessionPath(s.id)
+  const temporary = `${target}.${randomUUID()}.tmp`
+  writeFileSync(temporary, JSON.stringify(s, null, 2), { encoding: 'utf-8', mode: 0o600 })
+  renameSync(temporary, target)
+  Object.assign(session, s)
 }
 
 /** Delete a session */

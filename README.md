@@ -142,6 +142,30 @@ Monkey remembers things across sessions. It stores knowledge in `~/.monkey-cli/m
 - **`/clean`** — full cleanup: stale sessions + LLM-reviewed memory deduplication
 - **Safety guard** — all deletions are restricted to `~/.monkey-cli/` only (path validation + traversal protection)
 
+## 📱 Universal client (iOS / Android / Web / Desktop)
+
+The new Expo client lives in `apps/universal`. It connects to your own Monkey host
+using authenticated WebSockets; agent tools still execute on that host.
+
+```bash
+npm ci
+npm run build
+npm ci --prefix apps/universal
+npm run export:web --prefix apps/universal
+# Configure the host with `monkey` first, then:
+npm run serve
+```
+
+Open `http://127.0.0.1:8787`, then enter the connection key from
+`~/.monkey-cli/server-token`. Phones need a reachable HTTPS host address.
+The client supports shared sessions, streaming, tool approvals, model switching,
+image/text attachments, and reconnect recovery. It requires Node 22.13+.
+
+See [多端改造计划、运行方式与验收边界](docs/universal-client-plan.md) for native
+builds, desktop packaging, migration, HTTPS, and validation status. Native store
+releases still require signing and device testing. The legacy clients below are
+preserved; stop them before using the new service against the same session folder.
+
 ## 🍎 macOS Native App
 
 Monkey also comes as a native macOS app — no terminal needed.

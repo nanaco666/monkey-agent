@@ -1,0 +1,7 @@
+{
+  "name": "monkey-desktop",
+  "version": "0.3.0",
+  "description": "Monkey universal desktop client",
+  "private": true,
+  "main": "main.cjs"
+}

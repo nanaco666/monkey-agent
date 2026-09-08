@@ -1,0 +1,31 @@
+{
+  "appId": "com.monkey.agent.desktop",
+  "productName": "Monkey",
+  "directories": {
+    "output": "release",
+    "app": "desktop"
+  },
+  "files": [
+    "main.cjs",
+    "package.json"
+  ],
+  "mac": {
+    "target": [
+      "dmg"
+    ]
+  },
+  "win": {
+    "target": [
+      "nsis"
+    ]
+  },
+  "linux": {
+    "target": [
+      "AppImage"
+    ]
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true
+  }
+}
