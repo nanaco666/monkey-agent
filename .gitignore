@@ -16,3 +16,9 @@ MonkeyElectron/dist-electron/
 # Never commit personal data
 # ~/.monkey-cli/ lives outside this repo, but just in case:
 .monkey-cli/
+
+# Universal client build output
+apps/universal/.expo/
+apps/universal/ios/
+apps/universal/android/
+apps/universal/release/

@@ -1,0 +1,32 @@
+name: Universal client
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths: ['src/**', 'scripts/postbuild.mjs', 'tests/**', 'apps/universal/**', 'package*.json', 'tsconfig.json', '.github/workflows/universal-client.yml']
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/universal/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - run: npm test
+      - run: npm ci --prefix apps/universal
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm run typecheck --prefix apps/universal
+      - run: npm run export --prefix apps/universal
+        env:
+          EXPO_OFFLINE: '1'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monkey-universal-export
+          path: apps/universal/dist

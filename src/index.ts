@@ -53,6 +53,13 @@ if (args[0] === 'config' && args[1] === 'set' && args[2] && args[3]) {
   process.exit(0)
 }
 
+// Network service must fail clearly without launching the interactive setup wizard.
+if (args[0] === 'serve') {
+  const { startNetworkServer } = await import('./server/http.js')
+  await startNetworkServer()
+  await new Promise<void>(() => {})
+}
+
 let config = loadConfig()
 
 // first-time setup wizard
