@@ -166,6 +166,16 @@ builds, desktop packaging, migration, HTTPS, and validation status. Native store
 releases still require signing and device testing. The legacy clients below are
 preserved; stop them before using the new service against the same session folder.
 
+## ⌨️ Monkey Keyboard (iOS)
+
+`apps/keyboard` 提供独立的 iOS 容器 App 与系统键盘扩展，复用 Monkey 主机配置。
+支持 Twitter/X、Discord、小红书预设，生成两条候选并点选填入输入框；由你确认发送。
+Discord 查进度场景只读核对明确的 GitHub Issue/PR，附实时证据，不编造完成或建 PR。
+在 Monkey 对话中使用 `记住键盘偏好：...` 或 `/keyboard-note ...` 可以维护键盘偏好。
+
+安装方式与能力边界见 [键盘运行说明](apps/keyboard/README.md) 和 [一期方案](docs/monkey-keyboard-plan.md)。
+这是原生扩展，不能通过 Expo Go 安装。iOS 不能读取宿主 App 整页；请主动传入原文。
+
 ## 🍎 macOS Native App
 
 Monkey also comes as a native macOS app — no terminal needed.
