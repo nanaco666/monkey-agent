@@ -22,3 +22,10 @@ apps/universal/.expo/
 apps/universal/ios/
 apps/universal/android/
 apps/universal/release/
+
+# Native keyboard generated project and builds
+apps/keyboard/build/
+apps/keyboard/build-*/
+apps/keyboard/*.xcodeproj/
+apps/keyboard/*.log
+apps/keyboard/build-*.txt
