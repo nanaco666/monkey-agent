@@ -60,6 +60,19 @@ test('ordinary replies include fresh personal preferences and reject malformed m
   await assert.rejects(service.generate(input), /格式不正确/)
   await assert.rejects(service.generate({ ...input, context: '' }), /先传入/)
 })
+test('thread context and draft optimization are distinct generation modes', async () => {
+  const systems = []
+  const service = new KeyboardService(config, {
+    memory: async () => '',
+    complete: async (system, prompt) => { systems.push({ system, prompt: JSON.parse(prompt) }); return '{"candidates":["a","b"]}' },
+  })
+  await service.generate({ platform: 'twitter', scenario: 'reply', context: '主帖：发布说明\n\n楼层 A：这个功能什么时候可用？', contextMode: 'thread', threadTargetKind: 'reply' })
+  await service.generate({ platform: 'twitter', scenario: 'reply', context: '我已经写好的草稿', contextMode: 'draft', threadTargetKind: 'main' })
+  assert.match(systems[0].system, /楼层上下文.*A 楼层/s)
+  assert.match(systems[1].system, /优化当前输入.*草稿/s)
+  assert.equal(systems[0].prompt.contextMode, 'thread')
+  assert.equal(systems[1].prompt.contextMode, 'draft')
+})
 test('generation concurrency is bounded and releases its lock after failures', async () => {
   let finish
   const service = new KeyboardService(config, { memory: async () => '', complete: () => new Promise(resolve => { finish = resolve }) })
