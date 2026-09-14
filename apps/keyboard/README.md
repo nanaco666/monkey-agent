@@ -16,14 +16,14 @@ xcrun simctl install booted build/Build/Products/Release-iphonesimulator/MonkeyK
 xcrun simctl launch booted com.monkey.keyboard
 ```
 
-模拟器应用包包含 `KeyboardExtension.appex`。这不是可分发的真机 IPA。真机需要选定开发 Team，并正确配置 App Groups 与 Keychain Sharing；免费个人账户可能不支持所需能力。Expo Go 无法加载该扩展。
+模拟器应用包包含 `KeyboardExtension.appex`。这不是可分发的真机 IPA。真机需要选定开发 Team 并配置 Keychain Sharing。当前已移除 App Groups 依赖，2026-09-14 使用免费 Personal Team 在 iPhone 17 Pro Max（iOS 26.6.2）完成签名、安装、启动和主机连接。免费签名有效期通常为 7 天，到期需重新安装。Expo Go 无法加载该扩展。
 
-模拟器可以编译并安装容器 App；但没有 Apple Developer 签名时，iOS 26.5 可能在切换到第三方键盘时因 XPC/RunningBoard 权限检查终止扩展进程。容器 App 能运行不代表键盘扩展已通过验收，也不能替代真机签名测试。需要验证扩展画面和插入行为时，使用可用的 Team、Provisioning Profile 和 App Groups/Keychain Sharing 配置。
+2026-09-14 真机崩溃报告明确定位到 `viewDidLoad()` 过早读取 `documentIdentifier`：UIKit 返回 nil，而 Swift 的非空 UUID 桥接触发 SIGTRAP。已移除初始化期间读取，并用可空的公开 Objective-C getter 处理宿主尚未就绪的情况。此前将 SIGTRAP 直接归因于缺少付费签名的判断不成立；是否修复须以实际切换、生成与插入验证为准。
 
 ## 使用
 
 1. 仓库根目录 `npm run build && npm run serve`。容器 App 填主机地址和 `~/.monkey-cli/server-token`，点「连接并保存」。模型配置继续在主机 `~/.monkey-cli/config.json`。
-2. 系统设置 → 通用 → 键盘 → 键盘 → 添加新键盘 → Monkey，再开启「允许完全访问」用于联网。App 与键盘用共享 Keychain 保存连接密钥，用 App Group 传递明确准备的上下文。
+2. 系统设置 → 通用 → 键盘 → 键盘 → 添加新键盘 → Monkey，再开启「允许完全访问」用于联网。App 与键盘用共享 Keychain 保存连接密钥，用共享 Keychain 传递明确准备的上下文。
 3. 复制原文，在任意支持第三方键盘的输入框长按地球选择 Monkey，点「读取剪贴板」，选平台与场景，生成两条候选。也可在工作台准备上下文和本次指令后返回目标 App。
 4. 点候选只插入文本；检查后手动发送。键盘不会自动向 Twitter、Discord、小红书发消息。
 5. 查进度需要明确 GitHub Issue/PR 链接，或在偏好中保存仓库后填写 #编号。主机需要安装并登录 `gh`。无法核实时不会宣称完成或创建 PR；当前以事实模板输出，其他场景使用模型生成并遵循偏好。
@@ -32,3 +32,9 @@ xcrun simctl launch booted com.monkey.keyboard
 键盘不能读取宿主 App 整页或自动识别平台。当前输入框可能只提供部分文本；请核对原文。没有持续剪贴板监听，不后台收集输入。设置中的清除按钮会清除准备的上下文。
 
 网络：本机模拟器可用 `http://127.0.0.1:8787`；真机需可达的 HTTPS 主机或可信局域网调试地址。电脑窗口与后端是独立的，关闭窗口不必关闭服务，关闭后端则键盘无法生成。
+
+## USB 安装时导入连接
+
+原生 App 支持将 `monkey-connection.json` 放入自身沙盒的 Documents 目录，格式为 `{"address":"http://局域网IP:8787","token":"Monkey连接密钥"}`。启动时验证后写入 Keychain，并删除临时文件。Monkey 主应用也支持相同方式。文件只能通过本地安装流程传入，不应放进源码、应用包或 Git。导入不会包含模型 API Key。
+
+电脑后端默认只监听 127.0.0.1。手机连接需要同一网络上的可达接口（例如显式设置 `MONKEY_HOST` 或本地转发），且电脑不能休眠；手机里的 127.0.0.1 指向手机本身。
