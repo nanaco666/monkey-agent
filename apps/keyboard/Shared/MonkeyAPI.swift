@@ -67,7 +67,7 @@ enum Shared {
     }
     static func clearContext() throws {
         try updateSettings { values in
-            for key in ["context", "contextDate", "instruction", "reference"] { values.removeValue(forKey: key) }
+            for key in ["context", "threadRoot", "threadTarget", "threadTargetKind", "contextDate", "instruction", "reference"] { values.removeValue(forKey: key) }
         }
     }
     static func forget() throws {
@@ -79,7 +79,17 @@ enum Shared {
     static func prepare(context: String, platform: String, scenario: String, instruction: String, reference: String) throws {
         try updateSettings {
             $0["context"] = context; $0["contextDate"] = Date().timeIntervalSince1970
+            $0.removeValue(forKey: "threadRoot"); $0.removeValue(forKey: "threadTarget"); $0.removeValue(forKey: "threadTargetKind")
             $0["platform"] = platform; $0["scenario"] = scenario
+            $0["instruction"] = instruction; $0["reference"] = reference
+        }
+    }
+    static func prepareThread(root: String, target: String, targetKind: String, platform: String, scenario: String, instruction: String, reference: String) throws {
+        try updateSettings {
+            $0["threadRoot"] = root; $0["threadTarget"] = target; $0["threadTargetKind"] = targetKind
+            let targetLabel = targetKind == "reply" ? "正在回复的楼层：\n\(target)" : ""
+            $0["context"] = ["主帖：\n\(root)", targetLabel].filter { !$0.isEmpty }.joined(separator: "\n\n")
+            $0["contextDate"] = Date().timeIntervalSince1970; $0["platform"] = platform; $0["scenario"] = scenario
             $0["instruction"] = instruction; $0["reference"] = reference
         }
     }
