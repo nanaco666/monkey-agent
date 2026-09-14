@@ -85,6 +85,8 @@ enum Shared {
         }
     }
     static func prepareThread(root: String, target: String, targetKind: String, platform: String, scenario: String, instruction: String, reference: String) throws {
+        guard !root.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MonkeyFailure.message("请先填写主帖内容。") }
+        guard targetKind != "reply" || !target.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw MonkeyFailure.message("选择楼层回复时，请填写正在回复的 A 楼层。") }
         try updateSettings {
             $0["threadRoot"] = root; $0["threadTarget"] = target; $0["threadTargetKind"] = targetKind
             let targetLabel = targetKind == "reply" ? "正在回复的楼层：\n\(target)" : ""
