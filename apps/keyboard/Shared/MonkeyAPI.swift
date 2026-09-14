@@ -6,7 +6,33 @@ enum MonkeyFailure: LocalizedError {
     var errorDescription: String? { if case .message(let value) = self { return value }; return nil }
 }
 enum Shared {
-    static let defaults = UserDefaults(suiteName: "group.com.monkey.keyboard")!
+    // Keychain Sharing is provisioned by Personal Teams; App Groups is not.
+    // Always re-read so the app and extension see each other's latest values.
+    struct Settings {
+        func string(forKey key: String) -> String? { (try? Shared.settings())?[key] as? String }
+        func double(forKey key: String) -> Double { (try? Shared.settings())?[key] as? Double ?? 0 }
+    }
+    static let defaults = Settings()
+    private static var settingsQuery: [String: Any] {
+        var q = query; q[kSecAttrAccount as String] = "settings"; return q
+    }
+    private static func settings() throws -> [String: Any] {
+        var q = settingsQuery; q[kSecReturnData as String] = true
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(q as CFDictionary, &item)
+        if status == errSecItemNotFound { return [:] }
+        guard status == errSecSuccess, let data = item as? Data else {
+            throw MonkeyFailure.message("读取共享设置失败（\(status)），请确认已允许键盘完全访问。")
+        }
+        return try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]
+    }
+    private static func updateSettings(_ update: (inout [String: Any]) -> Void) throws {
+        var values = try settings(); update(&values)
+        let attrs: [String: Any] = [kSecValueData as String: try JSONSerialization.data(withJSONObject: values), kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
+        var status = SecItemUpdate(settingsQuery as CFDictionary, attrs as CFDictionary)
+        if status == errSecItemNotFound { status = SecItemAdd(settingsQuery.merging(attrs) { _, new in new } as CFDictionary, nil) }
+        guard status == errSecSuccess else { throw MonkeyFailure.message("保存共享设置失败（\(status)）。") }
+    }
     static var keychainGroup: String? { Bundle.main.object(forInfoDictionaryKey: "MonkeyKeychainGroup") as? String }
     static var query: [String: Any] {
         var query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "monkey.keyboard", kSecAttrAccount as String: "connection"]
@@ -24,16 +50,38 @@ enum Shared {
         var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
         if status == errSecItemNotFound { status = SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil) }
         guard status == errSecSuccess else { throw MonkeyFailure.message("安全存储失败（\(status)），请检查签名与 Keychain Sharing 配置。") }
-        defaults.set(address, forKey: "address")
+        try updateSettings { $0["address"] = address }
     }
-    static func clearContext() {
-        for key in ["context", "contextDate", "instruction", "reference"] { defaults.removeObject(forKey: key) }
+    // Optional one-time provisioning file copied into this app's sandbox over USB.
+    // Never bundled with the app; moved into Keychain and removed after import.
+    static func importConnection() throws -> Bool {
+        let file = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0].appendingPathComponent("monkey-connection.json")
+        guard FileManager.default.fileExists(atPath: file.path) else { return false }
+        struct Connection: Decodable { var address: String; var token: String }
+        let connection = try JSONDecoder().decode(Connection.self, from: Data(contentsOf: file))
+        _ = try MonkeyAPI.endpoint(connection.address)
+        guard connection.token.count >= 32 else { throw MonkeyFailure.message("连接密钥不完整。") }
+        try save(address: connection.address, token: connection.token)
+        try FileManager.default.removeItem(at: file)
+        return true
     }
-    static func forget() { SecItemDelete(query as CFDictionary); defaults.removeObject(forKey: "address"); clearContext() }
-    static func prepare(context: String, platform: String, scenario: String, instruction: String, reference: String) {
-        defaults.set(context, forKey: "context"); defaults.set(Date().timeIntervalSince1970, forKey: "contextDate")
-        defaults.set(platform, forKey: "platform"); defaults.set(scenario, forKey: "scenario")
-        defaults.set(instruction, forKey: "instruction"); defaults.set(reference, forKey: "reference")
+    static func clearContext() throws {
+        try updateSettings { values in
+            for key in ["context", "contextDate", "instruction", "reference"] { values.removeValue(forKey: key) }
+        }
+    }
+    static func forget() throws {
+        for q in [settingsQuery, query] {
+            let status = SecItemDelete(q as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else { throw MonkeyFailure.message("清除连接失败（\(status)）。") }
+        }
+    }
+    static func prepare(context: String, platform: String, scenario: String, instruction: String, reference: String) throws {
+        try updateSettings {
+            $0["context"] = context; $0["contextDate"] = Date().timeIntervalSince1970
+            $0["platform"] = platform; $0["scenario"] = scenario
+            $0["instruction"] = instruction; $0["reference"] = reference
+        }
     }
 }
 struct KeyboardProfile: Codable {
