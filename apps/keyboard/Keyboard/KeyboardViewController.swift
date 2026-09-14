@@ -67,7 +67,7 @@ final class KeyboardViewController: UIInputViewController {
         statusLabel.accessibilityIdentifier = "keyboardStatus"
         statusLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         stack.addArrangedSubview(statusLabel)
-        documentID = textDocumentProxy.documentIdentifier
+        // The host has not attached a document during viewDidLoad.
         loadPreparedContext()
     }
     override func viewWillAppear(_ animated: Bool) {
@@ -78,10 +78,18 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated); invalidate()
     }
+    // UIKit can return nil before host attachment despite its nonnull annotation.
+    // Read the public ObjC getter before bridging to Swift UUID to avoid SIGTRAP.
+    private func currentDocumentID() -> UUID? {
+        guard let proxy = textDocumentProxy as? NSObject else { return nil }
+        let selector = #selector(getter: UITextDocumentProxy.documentIdentifier)
+        guard proxy.responds(to: selector), let value = proxy.perform(selector)?.takeUnretainedValue() as? NSUUID else { return nil }
+        return value as UUID
+    }
     override func textDidChange(_ textInput: UITextInput?) {
         super.textDidChange(textInput)
-        if let documentID, documentID != textDocumentProxy.documentIdentifier { invalidate(); statusLabel.text = "输入框已切换，请核对原文后重新生成。" }
-        documentID = textDocumentProxy.documentIdentifier
+        if let documentID, documentID != currentDocumentID() { invalidate(); statusLabel.text = "输入框已切换，请核对原文后重新生成。" }
+        documentID = currentDocumentID()
     }
     private func loadPreparedContext() {
         let date = Shared.defaults.double(forKey: "contextDate")
@@ -126,7 +134,7 @@ final class KeyboardViewController: UIInputViewController {
     }
     @objc private func clearContext() {
         invalidate(); context = ""; instruction = ""; reference = ""
-        Shared.clearContext()
+        do { try Shared.clearContext() } catch { statusLabel.text = error.localizedDescription; updateContext(); return }
         statusLabel.text = "原文和候选已清除"; updateContext()
     }
     @objc private func selectionChanged() { invalidate(); statusLabel.text = "平台或场景已更新；请重新生成。" }
@@ -134,14 +142,14 @@ final class KeyboardViewController: UIInputViewController {
         guard hasFullAccess else { statusLabel.text = "请先为 Monkey 键盘开启「允许完全访问」。"; return }
         guard !context.isEmpty else { return }
         invalidate()
-        let version = revision, target = textDocumentProxy.documentIdentifier
+        let version = revision, target = currentDocumentID()
         let params: [String: Any] = ["platform": platforms[platformControl.selectedSegmentIndex], "scenario": scenarios[sceneControl.selectedSegmentIndex], "context": context, "instruction": instruction, "reference": reference]
         generateButton.isEnabled = false; generateButton.setTitle("正在生成…", for: .normal)
         statusLabel.text = "只发送当前原文与指令；你可以随时切回其他键盘。"
         work = Task { @MainActor [weak self] in
             do {
                 let result: ReplyResult = try await MonkeyAPI().request("keyboard_generate", params: params)
-                guard let self, !Task.isCancelled, self.revision == version, self.textDocumentProxy.documentIdentifier == target else { return }
+                guard let self, !Task.isCancelled, self.revision == version, self.currentDocumentID() == target else { return }
                 for (index, text) in result.candidates.enumerated() {
                     var config = UIButton.Configuration.filled()
                     config.baseBackgroundColor = .white; config.baseForegroundColor = .label
@@ -151,7 +159,7 @@ final class KeyboardViewController: UIInputViewController {
                     candidate.titleLabel?.font = .systemFont(ofSize: 14); candidate.titleLabel?.numberOfLines = 0
                     candidate.accessibilityLabel = "填入候选 \(index + 1)：\(text)"
                     candidate.addAction(UIAction { [weak self] _ in
-                        guard let self, self.textDocumentProxy.documentIdentifier == target else { return }
+                        guard let self, self.currentDocumentID() == target else { return }
                         self.textDocumentProxy.insertText(text)
                         self.invalidate(); self.statusLabel.text = "已填入，请在 App 中检查后发送。"
                     }, for: .touchUpInside)
