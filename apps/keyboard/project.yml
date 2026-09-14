@@ -34,7 +34,6 @@ targets:
     entitlements:
       path: App/MonkeyKeyboard.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.monkey.keyboard]
         keychain-access-groups: [$(AppIdentifierPrefix)com.monkey.keyboard.shared]
     dependencies:
       - target: KeyboardExtension
@@ -65,7 +64,6 @@ targets:
     entitlements:
       path: Keyboard/KeyboardExtension.entitlements
       properties:
-        com.apple.security.application-groups: [group.com.monkey.keyboard]
         keychain-access-groups: [$(AppIdentifierPrefix)com.monkey.keyboard.shared]
 schemes:
   MonkeyKeyboard:
