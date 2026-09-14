@@ -28,6 +28,6 @@ iOS 不允许第三方键盘读取宿主 App 的整页、帖子线程、私信�
 
 ## 安装边界
 
-模拟器构建无需付费 Apple Developer 会员。真机安装需要 Xcode 签名和可用能力；App Groups/共享 Keychain 与分发受账号配置限制，不能把模拟器通过视为真机可安装或商店审核通过。Expo Go 不会安装此扩展。
+模拟器构建无需付费 Apple Developer 会员。真机安装需要 Xcode 签名和可用能力；共享 Keychain/共享 Keychain 与分发受账号配置限制，不能把模拟器通过视为真机可安装或商店审核通过。Expo Go 不会安装此扩展。
 
 参考：[Apple 自定义键盘](https://developer.apple.com/documentation/uikit/creating-a-custom-keyboard)、[键盘扩展能力边界](https://developer.apple.com/library/archive/documentation/General/Conceptual/ExtensibilityPG/CustomKeyboard.html)。
