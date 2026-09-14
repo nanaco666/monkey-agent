@@ -11,6 +11,9 @@ struct KeyboardHome: View {
     @State private var busy = false
     @State private var message = "先连接你的 Monkey 主机"
     @State private var context = Shared.defaults.string(forKey: "context") ?? ""
+    @State private var threadRoot = Shared.defaults.string(forKey: "threadRoot") ?? ""
+    @State private var threadTarget = Shared.defaults.string(forKey: "threadTarget") ?? ""
+    @State private var threadTargetKind = Shared.defaults.string(forKey: "threadTargetKind") ?? "main"
     @State private var platform = Shared.defaults.string(forKey: "platform") ?? "twitter"
     @State private var scenario = Shared.defaults.string(forKey: "scenario") ?? "reaction"
     @State private var instruction = Shared.defaults.string(forKey: "instruction") ?? ""
@@ -25,8 +28,8 @@ struct KeyboardHome: View {
             TabView {
                 Form {
                     Section {
-                        Text("把想说的话，带到正在回复的地方。").font(.title2.bold())
-                        Text("复制原文，在键盘里点击读取，再挑选回复。只会填入输入框，由你发送。").foregroundStyle(.secondary)
+                        Text("把主帖和正在回复的楼层带到输入框。").font(.title2.bold())
+                        Text("默认按楼层上下文生成；已经写好的内容另有“优化当前输入”入口。只会填入输入框，由你发送。").foregroundStyle(.secondary)
                     }
                     Section("主机连接") {
                         TextField("服务地址", text: $address).keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled().accessibilityIdentifier("hostAddress")
@@ -56,19 +59,29 @@ struct KeyboardHome: View {
                     Section("回复工作台") {
                         Picker("平台", selection: $platform) { ForEach(platforms, id: \.0) { Text($0.1).tag($0.0) } }
                         Picker("场景", selection: $scenario) { Text("轻互动").tag("reaction"); Text("认真回复").tag("reply"); Text("查进度").tag("support") }
-                        Text("原文 / 对话上下文").font(.caption)
-                        TextEditor(text: $context).frame(minHeight: 120).accessibilityLabel("回复原文")
+                        Picker("回复对象", selection: $threadTargetKind) {
+                            Text("主帖（原创首条评论）").tag("main")
+                            Text("楼层回复（继续回复 A）").tag("reply")
+                        }
+                        Text("主帖内容").font(.caption)
+                        TextEditor(text: $threadRoot).frame(minHeight: 100).accessibilityLabel("主帖内容")
+                        Text("正在回复的楼层（可选）").font(.caption)
+                        TextEditor(text: $threadTarget).frame(minHeight: 90).accessibilityLabel("正在回复的楼层")
                         TextField("本次指令（可选）", text: $instruction, axis: .vertical)
                         TextField("Issue/PR 链接或 #编号", text: $reference).textInputAutocapitalization(.never).autocorrectionDisabled()
                         Button("准备到键盘") { run {
                             result = nil
-                            try Shared.prepare(context: context, platform: platform, scenario: scenario, instruction: instruction, reference: reference)
-                            message = "上下文已准备。切到目标输入框，选择 Monkey 键盘后生成。"
-                        } }.disabled(context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || context.count > 16000)
+                            let root = threadRoot.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let target = threadTarget.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !root.isEmpty, root.count + target.count <= 16000 else { throw MonkeyFailure.message("请填写主帖，且主帖加楼层不超过 16000 字符。") }
+                            try Shared.prepareThread(root: root, target: target, targetKind: threadTargetKind, platform: platform, scenario: scenario, instruction: instruction, reference: reference)
+                            context = ["主帖：\n\(root)", threadTargetKind == "reply" ? "正在回复的楼层：\n\(target)" : ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
+                            message = threadTargetKind == "reply" ? "楼层上下文已准备。键盘默认会基于主帖和 A 楼层生成。" : "主帖上下文已准备。键盘默认会生成你的首条评论。"
+                        } }.disabled(threadRoot.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || threadRoot.count + threadTarget.count > 16000)
                         Button(result == nil ? "生成两条候选" : "重新生成") { run {
                             result = nil
                             let revision = generationRevision
-                            let generated: ReplyResult = try await MonkeyAPI().request("keyboard_generate", params: ["platform": platform, "scenario": scenario, "context": context, "instruction": instruction, "reference": reference])
+                            let generated: ReplyResult = try await MonkeyAPI().request("keyboard_generate", params: ["platform": platform, "scenario": scenario, "context": context, "contextMode": "thread", "threadTargetKind": threadTargetKind, "instruction": instruction, "reference": reference])
                             guard revision == generationRevision else { message = "原文或选项已改变，请重新生成。"; return }
                             result = generated
                             message = result?.notice ?? ""
@@ -121,12 +134,12 @@ struct KeyboardHome: View {
                     }
                 } catch { message = error.localizedDescription }
             }
-            .onChange(of: [context, platform, scenario, instruction, reference]) { _, _ in
+            .onChange(of: [context, threadRoot, threadTarget, threadTargetKind, platform, scenario, instruction, reference]) { _, _ in
                 generationRevision += 1; result = nil
             }
             .onChange(of: [address, token]) { _, _ in connected = false }
             .confirmationDialog("忘记这台主机的连接和准备的上下文？", isPresented: $showForget) {
-                Button("断开并忘记", role: .destructive) { run { try Shared.forget(); token = ""; connected = false; result = nil; context = ""; instruction = ""; reference = ""; message = "已断开并清除本机连接" } }
+                Button("断开并忘记", role: .destructive) { run { try Shared.forget(); token = ""; connected = false; result = nil; context = ""; threadRoot = ""; threadTarget = ""; instruction = ""; reference = ""; message = "已断开并清除本机连接" } }
             }
         }
     }
