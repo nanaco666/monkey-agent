@@ -74,6 +74,7 @@ struct KeyboardHome: View {
                             let root = threadRoot.trimmingCharacters(in: .whitespacesAndNewlines)
                             let target = threadTarget.trimmingCharacters(in: .whitespacesAndNewlines)
                             guard !root.isEmpty, root.count + target.count <= 16000 else { throw MonkeyFailure.message("请填写主帖，且主帖加楼层不超过 16000 字符。") }
+                            guard threadTargetKind != "reply" || !target.isEmpty else { throw MonkeyFailure.message("选择楼层回复时，请填写正在回复的 A 楼层。") }
                             try Shared.prepareThread(root: root, target: target, targetKind: threadTargetKind, platform: platform, scenario: scenario, instruction: instruction, reference: reference)
                             context = ["主帖：\n\(root)", threadTargetKind == "reply" ? "正在回复的楼层：\n\(target)" : ""].filter { !$0.isEmpty }.joined(separator: "\n\n")
                             message = threadTargetKind == "reply" ? "楼层上下文已准备。键盘默认会基于主帖和 A 楼层生成。" : "主帖上下文已准备。键盘默认会生成你的首条评论。"
