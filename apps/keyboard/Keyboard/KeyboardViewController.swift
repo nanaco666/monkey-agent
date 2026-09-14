@@ -5,6 +5,7 @@ final class KeyboardViewController: UIInputViewController {
     private let stack = UIStackView()
     private let platformControl = UISegmentedControl(items: ["Twitter / X", "Discord", "小红书"])
     private let sceneControl = UISegmentedControl(items: ["轻互动", "认真回复", "查进度"])
+    private let sourceControl = UISegmentedControl(items: ["楼层上下文", "优化当前输入"])
     private let contextLabel = UILabel()
     private let statusLabel = UILabel()
     private let candidates = UIStackView()
@@ -13,6 +14,10 @@ final class KeyboardViewController: UIInputViewController {
     private var revision = 0
     private var documentID: UUID?
     private var context = ""
+    private var threadRoot = ""
+    private var threadTarget = ""
+    private var threadTargetKind = "main"
+    private var draft = ""
     private var reference = ""
     private var instruction = ""
     private var preparedAt: Double = 0
@@ -41,12 +46,15 @@ final class KeyboardViewController: UIInputViewController {
         platformControl.selectedSegmentIndex = 0; sceneControl.selectedSegmentIndex = 0
         platformControl.addTarget(self, action: #selector(selectionChanged), for: .valueChanged)
         sceneControl.addTarget(self, action: #selector(selectionChanged), for: .valueChanged)
+        sourceControl.selectedSegmentIndex = 0
+        sourceControl.addTarget(self, action: #selector(sourceChanged), for: .valueChanged)
         stack.addArrangedSubview(platformControl); stack.addArrangedSubview(sceneControl)
+        stack.addArrangedSubview(sourceControl)
         contextLabel.font = .systemFont(ofSize: 12); contextLabel.numberOfLines = 2; contextLabel.textColor = .secondaryLabel
         contextLabel.accessibilityIdentifier = "keyboardContext"
         contextLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         stack.addArrangedSubview(contextLabel)
-        let actions = row([button("读取剪贴板", #selector(readClipboard)), button("用输入框内容", #selector(readInput)), button("清除", #selector(clearContext))])
+        let actions = row([button("读取帖子剪贴板", #selector(readClipboard)), button("读取当前草稿", #selector(readInput)), button("清除上下文", #selector(clearContext))])
         actions.distribution = .fillEqually; stack.addArrangedSubview(actions)
         let scroll = UIScrollView(); scroll.translatesAutoresizingMaskIntoConstraints = false
         candidates.axis = .vertical; candidates.spacing = 8; candidates.translatesAutoresizingMaskIntoConstraints = false
@@ -96,38 +104,50 @@ final class KeyboardViewController: UIInputViewController {
         if date > preparedAt {
             invalidate(); preparedAt = date
             context = Shared.defaults.string(forKey: "context") ?? ""
+            threadRoot = Shared.defaults.string(forKey: "threadRoot") ?? ""
+            threadTarget = Shared.defaults.string(forKey: "threadTarget") ?? ""
+            threadTargetKind = Shared.defaults.string(forKey: "threadTargetKind") ?? "main"
             instruction = Shared.defaults.string(forKey: "instruction") ?? ""
             reference = Shared.defaults.string(forKey: "reference") ?? ""
             platformControl.selectedSegmentIndex = platforms.firstIndex(of: Shared.defaults.string(forKey: "platform") ?? "twitter") ?? 0
             sceneControl.selectedSegmentIndex = scenarios.firstIndex(of: Shared.defaults.string(forKey: "scenario") ?? "reaction") ?? 0
             let formatter = DateFormatter(); formatter.dateFormat = "MM-dd HH:mm"
-            statusLabel.text = "工作台准备于 \(formatter.string(from: Date(timeIntervalSince1970: date)))；请核对仍是这条原文。"
+            statusLabel.text = "楼层上下文准备于 \(formatter.string(from: Date(timeIntervalSince1970: date)))；默认按主帖/楼层生成。"
         }
         updateContext()
     }
     private func updateContext() {
-        contextLabel.text = context.isEmpty ? "先传入原文 · 键盘不能自动读取帖子或聊天整页" : "原文：\(context.prefix(140))"
-        generateButton.isEnabled = !context.isEmpty
-        generateButton.alpha = context.isEmpty ? 0.45 : 1
+        if sourceControl.selectedSegmentIndex == 1 {
+            contextLabel.text = draft.isEmpty ? "点“读取当前草稿”，生成润色版本" : "当前草稿：\(draft.prefix(140))"
+            generateButton.isEnabled = !draft.isEmpty
+        } else if context.isEmpty {
+            contextLabel.text = "先在工作台准备主帖/楼层；键盘不能自动读取宿主 App 整页"
+            generateButton.isEnabled = false
+        } else {
+            let kind = threadTargetKind == "reply" ? "回复楼层" : "主帖"
+            contextLabel.text = "默认上下文（\(kind)）：\(context.prefix(120))"
+            generateButton.isEnabled = true
+        }
+        generateButton.alpha = generateButton.isEnabled ? 1 : 0.45
     }
     private func invalidate() {
         revision += 1; work?.cancel(); work = nil
         for child in candidates.arrangedSubviews { candidates.removeArrangedSubview(child); child.removeFromSuperview() }
-        generateButton.setTitle("生成两条回复", for: .normal); generateButton.isEnabled = !context.isEmpty
+        generateButton.setTitle("生成两条回复", for: .normal); updateContext()
     }
     @objc private func readClipboard() {
         guard hasFullAccess else { statusLabel.text = "读取剪贴板与联网需要在系统键盘设置开启「允许完全访问」。"; return }
         guard let text = UIPasteboard.general.string, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { statusLabel.text = "剪贴板没有文本。请先复制需要回复的原文。"; return }
-        setContext(text, source: "已读取你复制的文本；请核对后生成。")
+        setContext(text, source: "已读取剪贴板帖子；请核对后生成。")
     }
     @objc private func readInput() {
         let text = textDocumentProxy.selectedText ?? ((textDocumentProxy.documentContextBeforeInput ?? "") + (textDocumentProxy.documentContextAfterInput ?? ""))
         guard !text.isEmpty else { statusLabel.text = "当前输入框为空；请先复制原文，或在工作台准备上下文。"; return }
-        setContext(text, source: "只取得输入框可见的文本片段，未取得整条帖子。")
+        draft = text; sourceControl.selectedSegmentIndex = 1; invalidate(); statusLabel.text = "已读取当前草稿；现在会优化草稿，不会把它当作帖子上下文。"; updateContext()
     }
     private func setContext(_ text: String, source: String) {
         guard text.count <= 16000 else { statusLabel.text = "原文过长，请在工作台精简到 16000 字符以内。"; return }
-        invalidate(); context = text; instruction = ""; reference = ""
+        invalidate(); context = text; threadRoot = text; threadTarget = ""; threadTargetKind = "main"; instruction = ""; reference = ""; sourceControl.selectedSegmentIndex = 0
         // Pick only an explicit GitHub link, not an inferred project or issue.
         if let range = text.range(of: #"https://github\.com/[\w.-]+/[\w.-]+/(issues|pull)/[1-9]\d*"#, options: .regularExpression) { reference = String(text[range]) }
         statusLabel.text = source; updateContext()
@@ -138,12 +158,14 @@ final class KeyboardViewController: UIInputViewController {
         statusLabel.text = "原文和候选已清除"; updateContext()
     }
     @objc private func selectionChanged() { invalidate(); statusLabel.text = "平台或场景已更新；请重新生成。" }
+    @objc private func sourceChanged() { invalidate(); statusLabel.text = sourceControl.selectedSegmentIndex == 0 ? "已切回楼层上下文模式。" : "已切到当前输入优化模式。"; updateContext() }
     @objc private func generate() {
         guard hasFullAccess else { statusLabel.text = "请先为 Monkey 键盘开启「允许完全访问」。"; return }
-        guard !context.isEmpty else { return }
+        let selectedContext = sourceControl.selectedSegmentIndex == 1 ? draft : context
+        guard !selectedContext.isEmpty else { return }
         invalidate()
         let version = revision, target = currentDocumentID()
-        let params: [String: Any] = ["platform": platforms[platformControl.selectedSegmentIndex], "scenario": scenarios[sceneControl.selectedSegmentIndex], "context": context, "instruction": instruction, "reference": reference]
+        let params: [String: Any] = ["platform": platforms[platformControl.selectedSegmentIndex], "scenario": scenarios[sceneControl.selectedSegmentIndex], "context": selectedContext, "contextMode": sourceControl.selectedSegmentIndex == 1 ? "draft" : "thread", "threadTargetKind": threadTargetKind, "instruction": instruction, "reference": reference]
         generateButton.isEnabled = false; generateButton.setTitle("正在生成…", for: .normal)
         statusLabel.text = "只发送当前原文与指令；你可以随时切回其他键盘。"
         work = Task { @MainActor [weak self] in
