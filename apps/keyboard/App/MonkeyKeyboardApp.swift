@@ -60,11 +60,11 @@ struct KeyboardHome: View {
                         TextEditor(text: $context).frame(minHeight: 120).accessibilityLabel("回复原文")
                         TextField("本次指令（可选）", text: $instruction, axis: .vertical)
                         TextField("Issue/PR 链接或 #编号", text: $reference).textInputAutocapitalization(.never).autocorrectionDisabled()
-                        Button("准备到键盘") {
+                        Button("准备到键盘") { run {
                             result = nil
-                            Shared.prepare(context: context, platform: platform, scenario: scenario, instruction: instruction, reference: reference)
+                            try Shared.prepare(context: context, platform: platform, scenario: scenario, instruction: instruction, reference: reference)
                             message = "上下文已准备。切到目标输入框，选择 Monkey 键盘后生成。"
-                        }.disabled(context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || context.count > 16000)
+                        } }.disabled(context.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || context.count > 16000)
                         Button(result == nil ? "生成两条候选" : "重新生成") { run {
                             result = nil
                             let revision = generationRevision
@@ -112,12 +112,21 @@ struct KeyboardHome: View {
             }
             .navigationTitle("Monkey Keyboard").navigationBarTitleDisplayMode(.inline)
             .tint(Color(red: 0.89, green: 0.40, blue: 0.18))
+            .task {
+                do {
+                    if try Shared.importConnection() {
+                        address = Shared.defaults.string(forKey: "address") ?? address
+                        token = Shared.token()
+                        message = "电脑连接配置已导入，请点击连接并保存。"
+                    }
+                } catch { message = error.localizedDescription }
+            }
             .onChange(of: [context, platform, scenario, instruction, reference]) { _, _ in
                 generationRevision += 1; result = nil
             }
             .onChange(of: [address, token]) { _, _ in connected = false }
             .confirmationDialog("忘记这台主机的连接和准备的上下文？", isPresented: $showForget) {
-                Button("断开并忘记", role: .destructive) { Shared.forget(); token = ""; connected = false; result = nil; context = ""; instruction = ""; reference = ""; message = "已断开并清除本机连接" }
+                Button("断开并忘记", role: .destructive) { run { try Shared.forget(); token = ""; connected = false; result = nil; context = ""; instruction = ""; reference = ""; message = "已断开并清除本机连接" } }
             }
         }
     }
